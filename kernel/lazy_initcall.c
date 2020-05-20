@@ -146,11 +146,7 @@ static const __initconst char * const blacklist[] = {
         "gt9916r",
         "qca_cld3_qca6490",
         "mi_cnss_statistic",
-        "sched_walt",
-        "thermal_pause",
-        "msm_performance",
         "shared_rail_scmi",
-        "hyp_core_ctl",
         "gplaf_scmi",
         "plh_scmi",
 	NULL

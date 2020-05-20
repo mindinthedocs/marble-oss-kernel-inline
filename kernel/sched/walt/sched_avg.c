@@ -210,7 +210,7 @@ static inline void update_busy_hyst_end_time(int cpu, int enq,
 		nr_run_trigger = true;
 
 	if (dequeue && (cpu_util(cpu) * BUSY_LOAD_FACTOR) >
-			capacity_orig_of(cpu))
+			arch_scale_cpu_capacity(cpu))
 		load_trigger = true;
 
 	if (dequeue && cpu_util(cpu) > per_cpu(coloc_hyst_busy, cpu))
@@ -310,7 +310,7 @@ unsigned int sched_get_cpu_util_pct(int cpu)
 
 	raw_spin_lock_irqsave(&rq->__lock, flags);
 
-	capacity = capacity_orig_of(cpu);
+	capacity = arch_scale_cpu_capacity(cpu);
 
 	util = wrq->prev_runnable_sum + wrq->grp_time.prev_runnable_sum;
 	util = scale_time_to_util(util);

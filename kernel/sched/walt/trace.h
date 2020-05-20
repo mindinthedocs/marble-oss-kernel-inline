@@ -949,7 +949,7 @@ TRACE_EVENT(walt_lb_cpu_util,
 		__entry->nr_big			= wrq->walt_stats.nr_big_tasks;
 		__entry->nr_rtg_high_prio_tasks	= walt_nr_rtg_high_prio(cpu);
 		__entry->cpu_util		= cpu_util(cpu);
-		__entry->capacity_orig		= capacity_orig_of(cpu);
+		__entry->capacity_orig		= arch_scale_cpu_capacity(cpu);
 	),
 
 	TP_printk("cpu=%d nr_running=%u cfs_nr_running=%u nr_big=%u nr_rtg_hp=%u cpu_util=%u capacity_orig=%u",
@@ -993,7 +993,7 @@ TRACE_EVENT(sched_cpu_util,
 		__entry->cpu_util_cum	= cpu_util_cum(cpu);
 		__entry->capacity_curr	= capacity_curr_of(cpu);
 		__entry->capacity	= capacity_of(cpu);
-		__entry->capacity_orig	= capacity_orig_of(cpu);
+		__entry->capacity_orig	= arch_scale_cpu_capacity(cpu);
 		__entry->idle_exit_latency	= walt_get_idle_exit_latency(cpu_rq(cpu));
 		__entry->irqload		= sched_irqload(cpu);
 		__entry->online			= cpu_online(cpu);
@@ -1577,7 +1577,6 @@ TRACE_EVENT(update_cpu_capacity,
 
 		__entry->cpu = cpu;
 		__entry->fmax_capacity = fmax_capacity;
-		__entry->rq_cpu_capacity_orig = rq_cpu_capacity_orig;
 		__entry->arch_capacity = arch_scale_cpu_capacity(cpu);
 		__entry->thermal_cap = arch_scale_cpu_capacity(cpu) -
 					arch_scale_thermal_pressure(cpu);
@@ -1585,11 +1584,10 @@ TRACE_EVENT(update_cpu_capacity,
 		__entry->max_possible_freq = cluster->max_possible_freq;
 	),
 
-	TP_printk("cpu=%d arch_capacity=%lu thermal_cap=%lu fmax_capacity=%lu max_freq=%lu max_possible_freq=%lu rq_cpu_capacity_orig=%lu",
+	TP_printk("cpu=%d arch_capacity=%lu thermal_cap=%lu fmax_capacity=%lu max_freq=%lu max_possible_freq=%lu",
 			__entry->cpu, __entry->arch_capacity,
 			__entry->thermal_cap, __entry->fmax_capacity,
-			__entry->max_freq, __entry->max_possible_freq,
-			__entry->rq_cpu_capacity_orig)
+			__entry->max_freq, __entry->max_possible_freq)
 );
 
 TRACE_EVENT(sched_fmax_uncap,

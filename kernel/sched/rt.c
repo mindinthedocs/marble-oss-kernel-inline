@@ -7,6 +7,8 @@
 
 #include "pelt.h"
 
+#include <trace/hooks/sched.h>
+
 int sched_rr_timeslice = RR_TIMESLICE;
 /* More than 4 hours if BW_SHIFT equals 20. */
 static const u64 max_rt_runtime = MAX_BW;

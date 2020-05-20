@@ -21,6 +21,7 @@
 #include <linux/sched.h>
 #include <linux/smp.h>
 #include <trace/hooks/topology.h>
+#include <trace/hooks/sched.h>
 
 static DEFINE_PER_CPU(u32, freq_factor) = 1;
 bool topology_scale_freq_invariant(void)

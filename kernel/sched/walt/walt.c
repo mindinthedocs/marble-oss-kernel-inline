@@ -652,7 +652,7 @@ __cpu_util_freq_walt(int cpu, struct walt_cpu_load *walt_load, unsigned int *rea
 {
 	u64 util;
 	struct rq *rq = cpu_rq(cpu);
-	unsigned long capacity = capacity_orig_of(cpu);
+	unsigned long capacity = arch_scale_cpu_capacity(cpu);
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu_of(rq));
 
 	util = scale_time_to_util(freq_policy_load(rq, reason));
@@ -695,7 +695,7 @@ cpu_util_freq_walt(int cpu, struct walt_cpu_load *walt_load, unsigned int *reaso
 	struct walt_cpu_load wl_other = {0};
 	struct walt_cpu_load wl_prime = {0};
 	unsigned long util = 0, util_other = 0, util_prime = 0;
-	unsigned long capacity = capacity_orig_of(cpu);
+	unsigned long capacity = arch_scale_cpu_capacity(cpu);
 	int i, mpct = PRIME_FACTOR;
 	unsigned long max_nl_other = 0, max_pl_other = 0;
 
@@ -1625,7 +1625,7 @@ static bool do_pl_notif(struct rq *rq)
 	int cpu = cpu_of(rq);
 
 	/* If already at max freq, bail out */
-	if (capacity_orig_of(cpu) == capacity_curr_of(cpu))
+	if (arch_scale_cpu_capacity(cpu) == capacity_curr_of(cpu))
 		return false;
 
 	prev = max(prev, wrq->old_estimated_time);
@@ -4419,7 +4419,7 @@ void update_cpu_capacity_helper(int cpu)
 {
 	unsigned long fmax_capacity = arch_scale_cpu_capacity(cpu);
 	unsigned long thermal_pressure = arch_scale_thermal_pressure(cpu);
-	unsigned long thermal_cap, old;
+	unsigned long thermal_cap, old, new_capacity;
 	struct walt_sched_cluster *cluster;
 	struct rq *rq = cpu_rq(cpu);
 
@@ -4440,23 +4440,23 @@ void update_cpu_capacity_helper(int cpu)
 		fmax_capacity = mult_frac(fmax_capacity, cluster->walt_internal_freq_limit,
 					 cluster->max_possible_freq);
 
-	old = rq->cpu_capacity_orig;
-	rq->cpu_capacity_orig = min(fmax_capacity, thermal_cap);
+	old = arch_scale_cpu_capacity(cpu_of(rq));
+	new_capacity = min(fmax_capacity, thermal_cap);
 
-	if (old != rq->cpu_capacity_orig)
-		trace_update_cpu_capacity(cpu, fmax_capacity, rq->cpu_capacity_orig);
+	if (old != new_capacity)
+		trace_update_cpu_capacity(cpu, fmax_capacity, new_capacity);
 }
 
 /*
  * The intention of this hook is to update cpu_capacity_orig as well as
- * (*capacity), otherwise we will end up capacity_of() > capacity_orig_of().
+ * (*capacity), otherwise we will end up capacity_of() > arch_scale_cpu_capacity().
  */
 static void android_rvh_update_cpu_capacity(void *unused, int cpu, unsigned long *capacity)
 {
 	unsigned long rt_pressure = arch_scale_cpu_capacity(cpu) - *capacity;
 
 	update_cpu_capacity_helper(cpu);
-	*capacity = max((int)(cpu_rq(cpu)->cpu_capacity_orig - rt_pressure), 0);
+	*capacity = max((int)(arch_scale_cpu_capacity(cpu) - rt_pressure), 0);
 }
 
 DEFINE_PER_CPU(u32, wakeup_ctr);
@@ -5413,7 +5413,7 @@ static void register_walt_hooks(void)
 	register_trace_android_rvh_cpu_cgroup_attach(android_rvh_cpu_cgroup_attach, NULL);
 	register_trace_android_rvh_cpu_cgroup_online(android_rvh_cpu_cgroup_online, NULL);
 	register_trace_android_rvh_sched_fork_init(android_rvh_sched_fork_init, NULL);
-	register_trace_android_rvh_ttwu_cond(android_rvh_ttwu_cond, NULL);
+	//register_trace_android_rvh_ttwu_cond(android_rvh_ttwu_cond, NULL);
 	register_trace_android_rvh_sched_exec(android_rvh_sched_exec, NULL);
 	register_trace_android_rvh_build_perf_domains(android_rvh_build_perf_domains, NULL);
 	register_trace_cpu_frequency_limits(walt_cpu_frequency_limits, NULL);
@@ -5553,7 +5553,7 @@ static void walt_init(struct work_struct *work)
 		sysctl_sched_features &= ~(1UL << i);
 	}
 
-	topology_clear_scale_freq_source(SCALE_FREQ_SOURCE_ARCH, cpu_online_mask);
+	//topology_clear_scale_freq_source(SCALE_FREQ_SOURCE_ARCH, cpu_online_mask);
 }
 
 static DECLARE_WORK(walt_init_work, walt_init);
