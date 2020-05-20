@@ -22,6 +22,7 @@
  */
 #include "sched.h"
 #include <linux/rbtree_augmented.h>
+#include <trace/hooks/sched.h>
 
 /*
  * The initial- and re-scaling of tunables is configurable
@@ -7828,6 +7829,12 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	int want_affine = 0;
 	/* SD_flags and WF_flags share the first nibble */
 	int sd_flag = wake_flags & 0xF;
+	int target_cpu = -1;
+
+	trace_android_rvh_select_task_rq_fair(p, prev_cpu, sd_flag,
+			wake_flags, &target_cpu);
+	if (target_cpu >= 0)
+		return target_cpu;
 
 	/*
 	 * required for stable ->cpus_allowed
