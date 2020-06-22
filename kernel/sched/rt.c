@@ -1577,6 +1577,12 @@ select_task_rq_rt(struct task_struct *p, int cpu, int flags)
 	struct task_struct *curr;
 	struct rq *rq;
 	bool test;
+	int target_cpu = -1;
+
+	trace_android_rvh_select_task_rq_rt(p, cpu, sd_flag,
+					flags, &target_cpu);
+	if (target_cpu >= 0)
+		return target_cpu;
 
 	/* For anything but wake ups, just return the task_cpu */
 	if (!(flags & (WF_TTWU | WF_FORK)))
@@ -1862,6 +1868,11 @@ static int find_lowest_rq(struct task_struct *task)
 	int this_cpu = smp_processor_id();
 	int cpu      = task_cpu(task);
 	int ret;
+	int lowest_cpu = -1;
+
+	trace_android_rvh_find_lowest_rq(task, lowest_mask, &lowest_cpu);
+	if (lowest_cpu >= 0)
+		return lowest_cpu;
 
 	/* Make sure the mask is initialized first */
 	if (unlikely(!lowest_mask))
