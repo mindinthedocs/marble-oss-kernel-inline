@@ -2166,6 +2166,9 @@ static int push_dl_task(struct rq *rq)
 		return 0;
 
 retry:
+	if (is_migration_disabled(next_task))
+		return 0;
+
 	if (WARN_ON(next_task == rq->curr))
 		return 0;
 
@@ -2243,7 +2246,7 @@ static void push_dl_tasks(struct rq *rq)
 static void pull_dl_task(struct rq *this_rq)
 {
 	int this_cpu = this_rq->cpu, cpu;
-	struct task_struct *p;
+	struct task_struct *p, *push_task;
 	bool resched = false;
 	struct rq *src_rq;
 	u64 dmin = LONG_MAX;
@@ -2272,7 +2275,8 @@ static void pull_dl_task(struct rq *this_rq)
 				   src_rq->dl.earliest_dl.next))
 			continue;
 
-		/* Might drop this_rq->__lock */
+		/* Might drop this_rq->lock */
+		push_task = NULL;
 		double_lock_balance(this_rq, src_rq);
 
 		/*
@@ -2304,17 +2308,27 @@ static void pull_dl_task(struct rq *this_rq)
 					   src_rq->curr->dl.deadline))
 				goto skip;
 
-			resched = true;
-
-			deactivate_task(src_rq, p, 0);
-			set_task_cpu(p, this_cpu);
-			activate_task(this_rq, p, 0);
-			dmin = p->dl.deadline;
+			if (is_migration_disabled(p)) {
+				push_task = get_push_task(src_rq);
+			} else {
+				deactivate_task(src_rq, p, 0);
+				set_task_cpu(p, this_cpu);
+				activate_task(this_rq, p, 0);
+				dmin = p->dl.deadline;
+				resched = true;
+			}
 
 			/* Is there any other task even earlier? */
 		}
 skip:
 		double_unlock_balance(this_rq, src_rq);
+
+		if (push_task) {
+			raw_spin_unlock(&this_rq->lock);
+			stop_one_cpu_nowait(src_rq->cpu, push_cpu_stop,
+					    push_task, &src_rq->push_work);
+			raw_spin_lock(&this_rq->lock);
+		}
 	}
 
 	if (resched)
@@ -2579,6 +2593,7 @@ const struct sched_class dl_sched_class
 	.rq_online              = rq_online_dl,
 	.rq_offline             = rq_offline_dl,
 	.task_woken		= task_woken_dl,
+	.find_lock_rq		= find_lock_later_rq,
 #endif
 
 	.task_tick		= task_tick_dl,
