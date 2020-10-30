@@ -185,7 +185,11 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 
 	util = map_util_perf(util);
 	freq = map_util_freq(util, freq, max);
-	trace_sugov_next_freq_tp(policy->cpu, util, max, freq);
+	trace_android_vh_map_util_freq(util, freq, max, &next_freq);
+	if (next_freq)
+		freq = next_freq;
+	else
+		freq = map_util_freq(util, freq, max);
 
 	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
 		return sg_policy->next_freq;
