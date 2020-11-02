@@ -137,7 +137,7 @@ static inline u32 log2plus1_u64_u32f8(u64 v) {
 
 static inline u32 calc_burst_penalty(u64 burst_time) {
 	u32 greed, tolerance, penalty, scaled_penalty;
-	
+
 	greed = log2plus1_u64_u32f8(burst_time);
 	tolerance = sched_burst_penalty_offset << 8;
 	penalty = max(0, (s32)greed - (s32)tolerance);
@@ -7149,7 +7149,7 @@ fail:
 
 /*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
- * that have the 'sd_flag' flag set. In practice, this is SD_BALANCE_WAKE,
+ * that have the relevant SD flag set. In practice, this is SD_BALANCE_WAKE,
  * SD_BALANCE_FORK, or SD_BALANCE_EXEC.
  *
  * Balances load by selecting the idlest CPU in the idlest group, or under
@@ -7160,13 +7160,15 @@ fail:
  * preempt must be disabled.
  */
 static int
-select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_flags)
+select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 {
+	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
 	struct sched_domain *tmp, *sd = NULL;
 	int cpu = smp_processor_id();
 	int new_cpu = prev_cpu;
 	int want_affine = 0;
-	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+	/* SD_flags and WF_flags share the first nibble */
+	int sd_flag = wake_flags & 0xF;
 	int target_cpu = -1;
 
 	if (trace_android_rvh_select_task_rq_fair_enabled() &&
