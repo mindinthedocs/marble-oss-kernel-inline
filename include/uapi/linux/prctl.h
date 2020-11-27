@@ -255,4 +255,9 @@ struct prctl_mm_map {
 #define PR_PAC_SET_ENABLED_KEYS		60
 #define PR_PAC_GET_ENABLED_KEYS		61
 
+/* Dispatch syscalls to a userspace handler */
+#define PR_SET_SYSCALL_USER_DISPATCH	59
+# define PR_SYS_DISPATCH_OFF		0
+# define PR_SYS_DISPATCH_ON		1
+
 #endif /* _LINUX_PRCTL_H */
