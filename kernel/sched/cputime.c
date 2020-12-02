@@ -76,7 +76,6 @@ void irqtime_account_irq(struct task_struct *curr)
 
 	trace_android_rvh_account_irq(curr, cpu, delta);
 }
-EXPORT_SYMBOL_GPL(irqtime_account_irq);
 
 static u64 irqtime_tick_accounted(u64 maxtime)
 {
@@ -446,7 +445,6 @@ void vtime_account_irq_enter(struct task_struct *tsk)
 	else
 		vtime_account_kernel(tsk);
 }
-EXPORT_SYMBOL_GPL(vtime_account_irq_enter);
 #endif /* __ARCH_HAS_VTIME_ACCOUNT */
 
 void cputime_adjust(struct task_cputime *curr, struct prev_cputime *prev,
