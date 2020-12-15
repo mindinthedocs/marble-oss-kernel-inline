@@ -1701,7 +1701,7 @@ static inline bool cpupri_check_rt(void)
 }
 #endif
 
-extern int task_can_attach(struct task_struct *p);
+extern int task_can_attach(struct task_struct *p, const struct cpumask *cs_effective_cpus);
 extern int dl_bw_alloc(int cpu, u64 dl_bw);
 extern void dl_bw_free(int cpu, u64 dl_bw);
 #ifdef CONFIG_SMP
