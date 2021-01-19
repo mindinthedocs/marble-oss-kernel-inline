@@ -91,10 +91,12 @@ extern struct cpumask __cpu_possible_mask;
 extern struct cpumask __cpu_online_mask;
 extern struct cpumask __cpu_present_mask;
 extern struct cpumask __cpu_active_mask;
+extern struct cpumask __cpu_dying_mask;
 #define cpu_possible_mask ((const struct cpumask *)&__cpu_possible_mask)
 #define cpu_online_mask   ((const struct cpumask *)&__cpu_online_mask)
 #define cpu_present_mask  ((const struct cpumask *)&__cpu_present_mask)
 #define cpu_active_mask   ((const struct cpumask *)&__cpu_active_mask)
+#define cpu_dying_mask    ((const struct cpumask *)&__cpu_dying_mask)
 
 extern atomic_t __num_online_cpus;
 
@@ -851,6 +853,14 @@ set_cpu_active(unsigned int cpu, bool active)
 		cpumask_clear_cpu(cpu, &__cpu_active_mask);
 }
 
+static inline void
+set_cpu_dying(unsigned int cpu, bool dying)
+{
+	if (dying)
+		cpumask_set_cpu(cpu, &__cpu_dying_mask);
+	else
+		cpumask_clear_cpu(cpu, &__cpu_dying_mask);
+}
 
 /**
  * to_cpumask - convert an NR_CPUS bitmap to a struct cpumask *
@@ -886,6 +896,11 @@ static inline const struct cpumask *get_cpu_mask(unsigned int cpu)
 	const unsigned long *p = cpu_bit_bitmap[1 + cpu % BITS_PER_LONG];
 	p -= cpu / BITS_PER_LONG;
 	return to_cpumask(p);
+}
+
+static inline bool cpu_dying(unsigned int cpu)
+{
+	return cpumask_test_cpu(cpu, cpu_dying_mask);
 }
 
 #define cpu_is_offline(cpu)	unlikely(!cpu_online(cpu))
