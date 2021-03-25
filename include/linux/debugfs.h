@@ -138,6 +138,8 @@ void debugfs_create_atomic_t(const char *name, umode_t mode,
 			     struct dentry *parent, atomic_t *value);
 struct dentry *debugfs_create_bool(const char *name, umode_t mode,
 				  struct dentry *parent, bool *value);
+void debugfs_create_str(const char *name, umode_t mode,
+			struct dentry *parent, char **value);
 
 struct dentry *debugfs_create_blob(const char *name, umode_t mode,
 				  struct dentry *parent,
@@ -165,6 +167,9 @@ ssize_t debugfs_read_file_bool(struct file *file, char __user *user_buf,
 
 ssize_t debugfs_write_file_bool(struct file *file, const char __user *user_buf,
 				size_t count, loff_t *ppos);
+
+ssize_t debugfs_read_file_str(struct file *file, char __user *user_buf,
+			      size_t count, loff_t *ppos);
 
 #else
 
@@ -318,6 +323,11 @@ static inline struct dentry *debugfs_create_bool(const char *name, umode_t mode,
 	return ERR_PTR(-ENODEV);
 }
 
+static inline void debugfs_create_str(const char *name, umode_t mode,
+				      struct dentry *parent,
+				      char **value)
+{ }
+
 static inline struct dentry *debugfs_create_blob(const char *name, umode_t mode,
 				  struct dentry *parent,
 				  struct debugfs_blob_wrapper *blob)
@@ -365,6 +375,13 @@ static inline ssize_t debugfs_read_file_bool(struct file *file,
 static inline ssize_t debugfs_write_file_bool(struct file *file,
 					      const char __user *user_buf,
 					      size_t count, loff_t *ppos)
+{
+	return -ENODEV;
+}
+
+static inline ssize_t debugfs_read_file_str(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
 {
 	return -ENODEV;
 }
