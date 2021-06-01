@@ -3252,24 +3252,6 @@ static inline void cfs_rq_util_change(struct cfs_rq *cfs_rq, int flags)
 
 #ifdef CONFIG_SMP
 #ifdef CONFIG_FAIR_GROUP_SCHED
-
-static inline bool cfs_rq_is_decayed(struct cfs_rq *cfs_rq)
-{
-	if (cfs_rq->load.weight)
-		return false;
-
-	if (cfs_rq->avg.load_sum)
-		return false;
-
-	if (cfs_rq->avg.util_sum)
-		return false;
-
-	if (cfs_rq->avg.runnable_sum)
-		return false;
-
-	return true;
-}
-
 /**
  * update_tg_load_avg - update the tg's load avg
  * @cfs_rq: the cfs_rq whose avg changed
@@ -3879,7 +3861,7 @@ static inline unsigned long _task_util_est(struct task_struct *p)
 {
 	struct util_est ue = READ_ONCE(p->se.avg.util_est);
 
-	return max(ue.ewma, (ue.enqueued & ~UTIL_AVG_UNCHANGED));
+	return (max(ue.ewma, ue.enqueued) | UTIL_AVG_UNCHANGED);
 }
 
 static inline unsigned long task_util_est(struct task_struct *p)
@@ -3979,7 +3961,7 @@ static inline void util_est_update(struct cfs_rq *cfs_rq,
 	 * Reset EWMA on utilization increases, the moving average is used only
 	 * to smooth utilization decreases.
 	 */
-	ue.enqueued = task_util(p);
+	ue.enqueued = (task_util(p) | UTIL_AVG_UNCHANGED);
 	if (sched_feat(UTIL_EST_FASTUP)) {
 		if (ue.ewma < ue.enqueued) {
 			ue.ewma = ue.enqueued;
@@ -4028,7 +4010,6 @@ static inline void util_est_update(struct cfs_rq *cfs_rq,
 	ue.ewma  += last_ewma_diff;
 	ue.ewma >>= UTIL_EST_WEIGHT_SHIFT;
 done:
-	ue.enqueued |= UTIL_AVG_UNCHANGED;
 	WRITE_ONCE(p->se.avg.util_est, ue);
 
 	trace_sched_util_est_se_tp(&p->se);
@@ -4062,11 +4043,6 @@ static inline void update_misfit_status(struct task_struct *p, struct rq *rq)
 }
 
 #else /* CONFIG_SMP */
-
-static inline bool cfs_rq_is_decayed(struct cfs_rq *cfs_rq)
-{
-	return true;
-}
 
 #define UPDATE_TG	0x0
 #define SKIP_AGE_LOAD	0x0
@@ -4726,8 +4702,8 @@ static int tg_unthrottle_up(struct task_group *tg, void *data)
 		cfs_rq->throttled_clock_task_time += rq_clock_task(rq) -
 					     cfs_rq->throttled_clock_task;
 
-		/* Add cfs_rq with load or one or more already running entities to the list */
-		if (!cfs_rq_is_decayed(cfs_rq) || cfs_rq->nr_running)
+		/* Add cfs_rq with already running entity in the list */
+		if (cfs_rq->nr_running >= 1)
 			list_add_leaf_cfs_rq(cfs_rq);
 	}
 
@@ -8035,6 +8011,32 @@ static bool __update_blocked_others(struct rq *rq, bool *done)
 }
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
+
+static inline bool cfs_rq_is_decayed(struct cfs_rq *cfs_rq)
+{
+	if (cfs_rq->load.weight)
+		return false;
+
+	if (cfs_rq->avg.load_sum)
+		return false;
+
+	if (cfs_rq->avg.util_sum)
+		return false;
+
+	if (cfs_rq->avg.runnable_sum)
+		return false;
+
+	/*
+	 * _avg must be null when _sum are null because _avg = _sum / divider
+	 * Make sure that rounding and/or propagation of PELT values never
+	 * break this.
+	 */
+	SCHED_WARN_ON(cfs_rq->avg.load_avg ||
+		      cfs_rq->avg.util_avg ||
+		      cfs_rq->avg.runnable_avg);
+
+	return true;
+}
 
 static bool __update_blocked_fair(struct rq *rq, bool *done)
 {
