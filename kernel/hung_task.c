@@ -201,7 +201,7 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 		trace_android_vh_check_uninterruptible_tasks(t, timeout, &need_check);
 		if (need_check)
 			/* use "==" to skip the TASK_KILLABLE tasks waiting on NFS */
-			if (t->state == TASK_UNINTERRUPTIBLE)
+			if (READ_ONCE(t->__state) == TASK_UNINTERRUPTIBLE)
 				check_hung_task(t, timeout);
 	}
 	trace_android_vh_check_uninterruptible_tasks_dn(NULL);
