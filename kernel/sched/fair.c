@@ -6820,11 +6820,7 @@ compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *pd)
 		max_util = max(max_util, min(cpu_util, _cpu_cap));
 	}
 
-	trace_android_vh_em_cpu_energy(pd->em_pd, max_util, sum_util, &energy);
-	if (!energy)
-		energy = em_cpu_energy(pd->em_pd, max_util, sum_util);
-
-	return energy;
+	return em_cpu_energy(pd->em_pd, max_util, sum_util, _cpu_cap);
 }
 
 /*
