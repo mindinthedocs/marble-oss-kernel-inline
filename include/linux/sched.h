@@ -1723,6 +1723,8 @@ extern int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new
 extern void force_compatible_cpus_allowed_ptr(struct task_struct *p);
 extern int dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src, int node);
 extern void release_user_cpus_ptr(struct task_struct *p);
+extern void force_compatible_cpus_allowed_ptr(struct task_struct *p);
+extern void relax_compatible_cpus_allowed_ptr(struct task_struct *p);
 #else
 static inline void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 {
