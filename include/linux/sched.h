@@ -457,7 +457,7 @@ struct sched_statistics {
 	u64				nr_wakeups_passive;
 	u64				nr_wakeups_idle;
 #endif
-};
+} ____cacheline_aligned;
 
 struct sched_entity {
 	/* For load-balancing: */
@@ -472,8 +472,6 @@ struct sched_entity {
 	u64				prev_sum_exec_runtime;
 
 	u64				nr_migrations;
-
-	struct sched_statistics		statistics;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	int				depth;
@@ -735,6 +733,8 @@ struct task_struct {
 	 */
 	struct uclamp_se		uclamp[UCLAMP_CNT];
 #endif
+
+	struct sched_statistics         stats;
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	/* List of struct preempt_notifier: */
