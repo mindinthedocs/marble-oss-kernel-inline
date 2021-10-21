@@ -433,6 +433,10 @@ DECLARE_HOOK(android_vh_mmput,
 DECLARE_HOOK(android_vh_sched_pelt_multiplier,
 	TP_PROTO(unsigned int old, unsigned int cur, int *ret),
 	TP_ARGS(old, cur, ret));
+DECLARE_RESTRICTED_HOOK(android_rvh_update_thermal_stats,
+		TP_PROTO(int cpu),
+		TP_ARGS(cpu), 1);
+
 /* macro versions of hooks are no longer required */
 
 #endif /* _TRACE_HOOK_SCHED_H */
