@@ -529,6 +529,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_update_thermal_stats);
 const struct gic_chip_data *GKI_struct_gic_chip_data;
 EXPORT_SYMBOL_GPL(GKI_struct_gic_chip_data);
 #endif
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_set_cpus_allowed_ptr_locked);
 
 #include <linux/swap_slots.h>
 const struct swap_slots_cache *GKI_struct_swap_slots_cache;
