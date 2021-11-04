@@ -7452,7 +7452,26 @@ static void calc_load_migrate(struct rq *rq)
 		atomic_long_add(delta, &calc_load_tasks);
 }
 
-struct task_struct *__pick_migrate_task(struct rq *rq)
+
+struct task_struct *pick_migrate_task(struct rq *rq)
+{
+	const struct sched_class *class;
+	struct task_struct *next;
+
+	for_each_class(class) {
+		next = class->pick_next_task(rq);
+		if (next) {
+			next->sched_class->put_prev_task(rq, next);
+			return next;
+		}
+	}
+
+	/* The idle class should always have a runnable task */
+	BUG();
+}
+EXPORT_SYMBOL_GPL(pick_migrate_task);
+
+static int __balance_push_cpu_stop(void *arg)
 {
 	const struct sched_class *class;
 	struct task_struct *next;
