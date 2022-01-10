@@ -2148,13 +2148,31 @@ EXPORT_SYMBOL_GPL(check_preempt_curr);
  */
 static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
 {
+	bool allowed = true;
+
+	/* When not in the task's cpumask, no point in looking further. */
 	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
 		return false;
 
 	if (is_per_cpu_kthread(p))
 		return cpu_online(cpu);
 
-	if (!cpu_active(cpu))
+	/* Non kernel threads are not allowed during either online or offline. */
+	if (!(p->flags & PF_KTHREAD)) {
+		if (cpu_active(cpu) && task_cpu_possible(cpu, p)) {
+			trace_android_rvh_is_cpu_allowed(cpu, &allowed);
+			return allowed;
+		} else {
+			return false;
+		}
+	}
+
+	/* KTHREAD_IS_PER_CPU is always allowed. */
+	if (kthread_is_per_cpu(p))
+		return cpu_online(cpu);
+
+	/* Regular kernel threads don't get to stay during offline. */
+	if (cpu_dying(cpu))
 		return false;
 
 	return cpumask_test_cpu(cpu, task_cpu_possible_mask(p));
