@@ -2,6 +2,7 @@
 
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -62,8 +63,8 @@ void qcom_before_check_tasks(void *ignore, struct task_struct *t, unsigned long 
 
 	*need_check = true;
 
-	if (unlikely(t->in_iowait) && (t->state == TASK_UNINTERRUPTIBLE ||
-			t->state == TASK_STOPPED || t->state == TASK_TRACED) &&
+	if (unlikely(t->in_iowait) && (t->__state == TASK_UNINTERRUPTIBLE ||
+			t->__state == TASK_STOPPED || t->__state == TASK_TRACED) &&
 			t->last_switch_time != 0 &&
 			time_is_before_jiffies(t->last_switch_time + timeout * HZ) &&
 			(t->mm != NULL && t == t->group_leader))
