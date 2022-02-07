@@ -430,13 +430,6 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 			kthread->full_name = kvasprintf(GFP_KERNEL, namefmt, args);
 		}
 		set_task_comm(task, name);
-		/*
-		 * root may have changed our (kthreadd's) priority or CPU mask.
-		 * The kernel thread should not inherit these properties.
-		 */
-		sched_setscheduler_nocheck(task, SCHED_NORMAL, &param);
-		set_cpus_allowed_ptr(task,
-				     housekeeping_cpumask(HK_FLAG_KTHREAD));
 	}
 	kfree(create);
 	return task;
