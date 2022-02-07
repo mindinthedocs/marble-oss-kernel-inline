@@ -930,6 +930,10 @@ struct task_struct {
 	unsigned			in_page_owner:1;
 #endif
 
+#ifdef CONFIG_IOMMU_SVA
+	unsigned			pasid_activated:1;
+#endif
+
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
 	struct restart_block		restart_block;
