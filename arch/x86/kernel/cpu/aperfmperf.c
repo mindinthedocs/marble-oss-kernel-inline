@@ -86,7 +86,7 @@ unsigned int aperfmperf_get_khz(int cpu)
 	if (!boot_cpu_has(X86_FEATURE_APERFMPERF))
 		return 0;
 
-	if (!housekeeping_cpu(cpu, HK_FLAG_MISC))
+	if (!housekeeping_cpu(cpu, HK_TYPE_MISC))
 		return 0;
 
 	aperfmperf_snapshot_cpu(cpu, ktime_get(), true);
@@ -106,7 +106,7 @@ void arch_freq_prepare_all(void)
 		return;
 
 	for_each_online_cpu(cpu) {
-		if (!housekeeping_cpu(cpu, HK_FLAG_MISC))
+		if (!housekeeping_cpu(cpu, HK_TYPE_MISC))
 			continue;
 		if (!aperfmperf_snapshot_cpu(cpu, now, false))
 			wait = true;
@@ -124,7 +124,7 @@ unsigned int arch_freq_get_on_cpu(int cpu)
 	if (!boot_cpu_has(X86_FEATURE_APERFMPERF))
 		return 0;
 
-	if (!housekeeping_cpu(cpu, HK_FLAG_MISC))
+	if (!housekeeping_cpu(cpu, HK_TYPE_MISC))
 		return 0;
 
 	if (aperfmperf_snapshot_cpu(cpu, ktime_get(), true))

@@ -2147,7 +2147,7 @@ static void nocb_gp_wait(struct rcu_data *my_rdp)
 			raw_spin_lock_irqsave(&my_rdp->nocb_gp_lock, flags);
 			mod_timer(&my_rdp->nocb_bypass_timer, j + 2);
 			raw_spin_unlock_irqrestore(&my_rdp->nocb_gp_lock, flags);
-			
+
 		}
 	}
 	if (rcu_nocb_poll) {
@@ -2779,7 +2779,7 @@ static void rcu_bind_gp_kthread(void)
 {
 	if (!tick_nohz_full_enabled())
 		return;
-	housekeeping_affine(current, HK_FLAG_RCU);
+	housekeeping_affine(current, HK_TYPE_RCU);
 }
 
 /* Record the current task on dyntick-idle entry. */
