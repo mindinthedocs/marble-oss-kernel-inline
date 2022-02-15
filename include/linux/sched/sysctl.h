@@ -52,15 +52,6 @@ int sched_proc_update_handler(struct ctl_table *table, int write,
 		void *buffer, size_t *length, loff_t *ppos);
 #endif
 
-/*
- *  control realtime throttling:
- *
- *  /proc/sys/kernel/sched_rt_period_us
- *  /proc/sys/kernel/sched_rt_runtime_us
- */
-extern unsigned int sysctl_sched_rt_period;
-extern int sysctl_sched_rt_runtime;
-
 extern unsigned int sysctl_sched_dl_period_max;
 extern unsigned int sysctl_sched_dl_period_min;
 
@@ -82,8 +73,6 @@ extern int sysctl_sched_rr_timeslice;
 extern int sched_rr_timeslice;
 
 int sched_rr_handler(struct ctl_table *table, int write, void *buffer,
-		size_t *lenp, loff_t *ppos);
-int sched_rt_handler(struct ctl_table *table, int write, void *buffer,
 		size_t *lenp, loff_t *ppos);
 int sysctl_sched_uclamp_handler(struct ctl_table *table, int write,
 		void *buffer, size_t *lenp, loff_t *ppos);
