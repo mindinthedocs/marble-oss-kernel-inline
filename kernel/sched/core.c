@@ -2074,7 +2074,7 @@ static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 	p->sched_class->enqueue_task(rq, p, flags);
 
 	trace_android_rvh_enqueue_task(rq, p, flags);
-	trace_android_rvh_after_enqueue_task(rq, p);
+	trace_android_rvh_after_enqueue_task(rq, p, flags);
 
 	if (sched_core_enabled(rq))
 		sched_core_enqueue(rq, p);
@@ -2095,7 +2095,7 @@ static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 
 	uclamp_rq_dec(rq, p);
 	p->sched_class->dequeue_task(rq, p, flags);
-	trace_android_rvh_after_dequeue_task(rq, p);
+	trace_android_rvh_after_dequeue_task(rq, p, flags);
 }
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
