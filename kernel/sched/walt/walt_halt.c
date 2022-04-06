@@ -193,10 +193,10 @@ static int drain_rq_cpu_stop(void *data)
 
 static int sched_cpu_drain_rq_walt(unsigned int cpu)
 {
-	if (available_idle_cpu(cpu))
+	if (!cpu_online(cpu))
 		return 0;
 
-	if (!cpu_online(cpu))
+	if (available_idle_cpu(cpu))
 		return 0;
 
 	/* this will schedule, must not be in atomic context */
@@ -232,26 +232,26 @@ static int __ref try_drain_rqs(void *data)
 	int cpu;
 	unsigned long flags;
 
-	raw_spin_lock_irqsave(&walt_drain_pending_lock, flags);
-
-	/* continue while there are cpus to drain
-	 * assume at least one cpu to start.
-	 */
-	do {
-		cpumask_t local_cpus;
-
-		cpumask_copy(&local_cpus, cpus_ptr);
-		raw_spin_unlock_irqrestore(&walt_drain_pending_lock, flags);
-
-		for_each_cpu(cpu, &local_cpus)
-			cpu_drain_rq(cpu);
-
+	while (!kthread_should_stop()) {
 		raw_spin_lock_irqsave(&walt_drain_pending_lock, flags);
-		cpumask_andnot(cpus_ptr, cpus_ptr, &local_cpus);
+		if (cpumask_weight(cpus_ptr)) {
+			cpumask_t local_cpus;
 
-	} while (cpumask_weight(cpus_ptr));
+			cpumask_copy(&local_cpus, cpus_ptr);
+			raw_spin_unlock_irqrestore(&walt_drain_pending_lock, flags);
 
-	raw_spin_unlock_irqrestore(&walt_drain_pending_lock, flags);
+			for_each_cpu(cpu, &local_cpus)
+				cpu_drain_rq(cpu);
+
+			raw_spin_lock_irqsave(&walt_drain_pending_lock, flags);
+			cpumask_andnot(cpus_ptr, cpus_ptr, &local_cpus);
+
+		}
+		raw_spin_unlock_irqrestore(&walt_drain_pending_lock, flags);
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule();
+		set_current_state(TASK_RUNNING);
+	}
 
 	return 0;
 }
@@ -289,7 +289,9 @@ static int halt_cpus(struct cpumask *cpus)
 	raw_spin_lock_irqsave(&walt_drain_pending_lock, flags);
 	cpumask_or(&drain_data.cpus_to_drain, &drain_data.cpus_to_drain, cpus);
 	raw_spin_unlock_irqrestore(&walt_drain_pending_lock, flags);
-	wake_up_process(walt_drain_thread);
+
+	if (!IS_ERR(walt_drain_thread))
+		wake_up_process(walt_drain_thread);
 
 	trace_halt_cpus(cpus, start_time, 1, ret);
 
@@ -389,7 +391,6 @@ unlock:
 
 	return ret;
 }
-EXPORT_SYMBOL(walt_halt_cpus);
 
 int walt_pause_cpus(struct cpumask *cpus)
 {
@@ -424,7 +425,6 @@ int walt_start_cpus(struct cpumask *cpus)
 
 	return ret;
 }
-EXPORT_SYMBOL(walt_start_cpus);
 
 int walt_resume_cpus(struct cpumask *cpus)
 {
@@ -526,7 +526,15 @@ static void android_rvh_is_cpu_allowed(void *unused, int cpu, bool *allowed)
 
 void walt_halt_init(void)
 {
+	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
+
 	walt_drain_thread = kthread_run(try_drain_rqs, &drain_data, "halt_drain_rqs");
+	if (IS_ERR(walt_drain_thread)) {
+		pr_err("Error creating walt drain thread\n");
+		return;
+	}
+
+	sched_setscheduler_nocheck(walt_drain_thread, SCHED_FIFO, &param);
 
 	register_trace_android_rvh_get_nohz_timer_target(android_rvh_get_nohz_timer_target, NULL);
 	register_trace_android_rvh_set_cpus_allowed_ptr_locked(
