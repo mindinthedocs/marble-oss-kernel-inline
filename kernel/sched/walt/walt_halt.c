@@ -274,6 +274,11 @@ static int halt_cpus(struct cpumask *cpus)
 
 	for_each_cpu(cpu, cpus) {
 
+		if (cpu == cpumask_first(system_32bit_el0_cpumask())) {
+			ret = -EINVAL;
+			goto out;
+		}
+
 		halt_cpu_state = per_cpu_ptr(&halt_state, cpu);
 
 		/* set the cpu as halted */
@@ -293,6 +298,7 @@ static int halt_cpus(struct cpumask *cpus)
 	if (!IS_ERR(walt_drain_thread))
 		wake_up_process(walt_drain_thread);
 
+out:
 	trace_halt_cpus(cpus, start_time, 1, ret);
 
 	return ret;
