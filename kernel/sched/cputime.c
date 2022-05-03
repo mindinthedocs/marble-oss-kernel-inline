@@ -55,6 +55,7 @@ void irqtime_account_irq(struct task_struct *curr)
 	struct irqtime *irqtime = this_cpu_ptr(&cpu_irqtime);
 	s64 delta;
 	int cpu;
+	bool irq_start = true;
 
 	if (!sched_clock_irqtime)
 		return;
@@ -69,12 +70,20 @@ void irqtime_account_irq(struct task_struct *curr)
 	 * in that case, so as not to confuse scheduler with a special task
 	 * that do not consume any time, but still wants to run.
 	 */
-	if (hardirq_count())
+	if (hardirq_count()) {
 		irqtime_account_delta(irqtime, delta, CPUTIME_IRQ);
-	else if (in_serving_softirq() && curr != this_cpu_ksoftirqd())
+		irq_start = false;
+	} else if (in_serving_softirq() && curr != this_cpu_ksoftirqd()) {
 		irqtime_account_delta(irqtime, delta, CPUTIME_SOFTIRQ);
+		irq_start = false;
+	}
 
 	trace_android_rvh_account_irq(curr, cpu, delta);
+
+	if (irq_start)
+		trace_android_rvh_account_irq_start(curr, cpu, delta);
+	else
+		trace_android_rvh_account_irq_end(curr, cpu, delta);
 }
 EXPORT_SYMBOL_GPL(irqtime_account_irq);
 
