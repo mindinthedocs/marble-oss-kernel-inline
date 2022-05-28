@@ -137,7 +137,7 @@ static inline int pause_cpu(int cpu)
 	cpumask_clear(&cpus_to_pause);
 	cpumask_set_cpu(cpu, &cpus_to_pause);
 
-	ret = walt_pause_cpus(&cpus_to_pause);
+	ret = walt_pause_cpus(&cpus_to_pause, PAUSE_HYP);
 
 	return ret;
 }
@@ -150,7 +150,7 @@ static inline int resume_cpu(int cpu)
 	cpumask_clear(&cpus_to_resume);
 	cpumask_set_cpu(cpu, &cpus_to_resume);
 
-	ret = walt_resume_cpus(&cpus_to_resume);
+	ret = walt_resume_cpus(&cpus_to_resume, PAUSE_HYP);
 
 	return ret;
 }
