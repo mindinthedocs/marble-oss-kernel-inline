@@ -203,6 +203,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_sched_fork_init);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_ttwu_cond);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_schedule_bug);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_sched_exec);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_map_util_freq_new);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ftrace_oops_enter);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ftrace_oops_exit);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_ftrace_size_check);
