@@ -179,6 +179,8 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf)
 	rq->stop = stop;
 }
 
+void __balance_callbacks(struct rq *rq);
+
 static int drain_rq_cpu_stop(void *data)
 {
 	struct rq *rq = this_rq();
@@ -186,6 +188,14 @@ static int drain_rq_cpu_stop(void *data)
 
 	rq_lock_irqsave(rq, &rf);
 	migrate_tasks(rq, &rf);
+
+	/*
+	 * service any callbacks that were accumulated, prior to unlocking. such that
+	 * any subsequent calls to rq_lock... will see an rq->balance_callback set to
+	 * the default (0 or balance_push_callback);
+	 */
+	__balance_callbacks(rq);
+
 	rq_unlock_irqrestore(rq, &rf);
 
 	return 0;
