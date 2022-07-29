@@ -2123,4 +2123,13 @@ static inline bool is_good_name(const char *name)
 	return true;
 }
 
+#ifdef CONFIG_RV
+extern int rv_init_interface(void);
+#else
+static inline int rv_init_interface(void)
+{
+	return 0;
+}
+#endif
+
 #endif /* _LINUX_KERNEL_TRACE_H */

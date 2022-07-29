@@ -100,5 +100,6 @@ obj-$(CONFIG_TRACE_MMIO_ACCESS) += trace_readwrite.o
 
 obj-$(CONFIG_IPC_LOGGING) += qcom_ipc_logging.o
 qcom_ipc_logging-y := ipc_logging.o  ipc_logging_debug.o
+obj-$(CONFIG_RV) += rv/
 
 libftrace-y := ftrace.o

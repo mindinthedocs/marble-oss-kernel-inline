@@ -9317,6 +9317,8 @@ static __init int tracer_init_tracefs(void)
 
 	update_tracer_options(&global_trace);
 
+	rv_init_interface();
+
 	return 0;
 }
 
