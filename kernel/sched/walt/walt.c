@@ -4580,6 +4580,7 @@ static void walt_init(struct work_struct *work)
 {
 	struct ctl_table_header *hdr;
 	static atomic_t already_inited = ATOMIC_INIT(0);
+	struct root_domain *rd = cpu_rq(cpumask_first(cpu_active_mask))->rd;
 	int i;
 
 	might_sleep();
@@ -4621,6 +4622,11 @@ static void walt_init(struct work_struct *work)
 	}
 
 	topology_clear_scale_freq_source(SCALE_FREQ_SOURCE_ARCH, cpu_online_mask);
+
+	if (!rcu_dereference(rd->pd))
+		WALT_BUG(WALT_BUG_WALT, NULL,
+			 "root domain's perf-domain values not initialized rd->pd=%d.",
+			 rd->pd);
 }
 
 static DECLARE_WORK(walt_init_work, walt_init);
