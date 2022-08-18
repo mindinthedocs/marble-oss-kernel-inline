@@ -437,6 +437,10 @@ DECLARE_RESTRICTED_HOOK(android_rvh_update_thermal_stats,
 		TP_PROTO(int cpu),
 		TP_ARGS(cpu), 1);
 
+DECLARE_HOOK(android_vh_update_topology_flags_workfn,
+	TP_PROTO(void *unused),
+	TP_ARGS(unused));
+
 /* macro versions of hooks are no longer required */
 
 #endif /* _TRACE_HOOK_SCHED_H */
