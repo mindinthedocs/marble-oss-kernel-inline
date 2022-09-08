@@ -4,8 +4,6 @@
 
 #include <linux/types.h>
 
-struct ctl_table;
-
 #ifdef CONFIG_DETECT_HUNG_TASK
 
 #ifdef CONFIG_SMP
@@ -33,8 +31,5 @@ enum sched_tunable_scaling {
 	SCHED_TUNABLESCALING_END,
 };
 
-
-int sysctl_numa_balancing(struct ctl_table *table, int write, void *buffer,
-		size_t *lenp, loff_t *ppos);
 
 #endif /* _LINUX_SCHED_SYSCTL_H */
