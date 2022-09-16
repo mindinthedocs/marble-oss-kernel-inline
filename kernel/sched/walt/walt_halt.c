@@ -309,8 +309,7 @@ static int halt_cpus(struct cpumask *cpus)
 	cpumask_or(&drain_data.cpus_to_drain, &drain_data.cpus_to_drain, cpus);
 	raw_spin_unlock_irqrestore(&walt_drain_pending_lock, flags);
 
-	if (!IS_ERR(walt_drain_thread))
-		wake_up_process(walt_drain_thread);
+	wake_up_process(walt_drain_thread);
 
 out:
 	trace_halt_cpus(cpus, start_time, 1, ret);
@@ -412,6 +411,8 @@ unlock:
 
 int walt_pause_cpus(struct cpumask *cpus, enum pause_reason reason)
 {
+	if (walt_disabled)
+		return -EAGAIN;
 	return walt_halt_cpus(cpus, reason);
 }
 EXPORT_SYMBOL(walt_pause_cpus);
@@ -446,6 +447,8 @@ int walt_start_cpus(struct cpumask *cpus, enum pause_reason reason)
 
 int walt_resume_cpus(struct cpumask *cpus, enum pause_reason reason)
 {
+	if (walt_disabled)
+		return -EAGAIN;
 	return walt_start_cpus(cpus, reason);
 }
 EXPORT_SYMBOL(walt_resume_cpus);
