@@ -428,6 +428,8 @@ struct task_group {
 	struct uclamp_se	uclamp_req[UCLAMP_CNT];
 	/* Effective clamp values used for a task group */
 	struct uclamp_se	uclamp[UCLAMP_CNT];
+
+	ANDROID_VENDOR_DATA_ARRAY(1, 4);
 #endif
 
 };
