@@ -166,6 +166,7 @@ static bool __dead_end_function(struct objtool_file *file, struct symbol *func,
 	static const char * const global_noreturns[] = {
 		"__stack_chk_fail",
 		"panic",
+		"arch_cpu_idle_dead",
 		"do_exit",
 		"do_task_dead",
 		"make_task_dead",
