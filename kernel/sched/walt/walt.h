@@ -7,6 +7,8 @@
 #ifndef _WALT_H
 #define _WALT_H
 
+#include <linux/pm_qos.h>
+#include <linux/sched/cputime.h>
 #include "../../../kernel/sched/sched.h"
 #include "../../../fs/proc/internal.h"
 #include <linux/sched/walt.h>
@@ -49,6 +51,10 @@ enum task_event {
 	TASK_MIGRATE	= 3,
 	TASK_UPDATE	= 4,
 	IRQ_UPDATE	= 5,
+};
+
+enum qos_clients {
+	STUB_CLIENT,
 };
 
 /* Note: this need to be in sync with migrate_type_names array */
@@ -321,9 +327,6 @@ extern struct irq_work walt_migration_irq_work;
 extern unsigned int cpuinfo_max_freq_cached;
 extern char sched_lib_name[LIB_PATH_LENGTH];
 extern unsigned int sched_lib_mask_force;
-
-extern cpumask_t cpus_for_sbt_pause;
-extern unsigned int sysctl_sched_sbt_delay_windows;
 
 /* WALT cpufreq interface */
 #define WALT_CPUFREQ_ROLLOVER		0x1
@@ -849,6 +852,8 @@ extern int walt_find_energy_efficient_cpu(struct task_struct *p, int prev_cpu,
 					int sync, int sibling_count_hint);
 extern int walt_find_cluster_packing_cpu(int start_cpu);
 extern bool walt_choose_packing_cpu(int packing_cpu, struct task_struct *p);
+extern void add_max_freq_qos_request(struct cpumask max_freq_cpus, s32 max_freq,
+		enum qos_clients client);
 
 static inline unsigned int cpu_max_possible_freq(int cpu)
 {
