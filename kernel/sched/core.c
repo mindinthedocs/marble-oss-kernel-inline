@@ -7702,6 +7702,7 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 
 	trace_android_rvh_schedule_bug(NULL);
 
+	panic("%s: Panicking due to potential bug", __func__);
 	dump_stack();
 	add_taint(TAINT_WARN, LOCKDEP_STILL_OK);
 }
@@ -7730,6 +7731,7 @@ void __cant_sleep(const char *file, int line, int preempt_offset)
 			current->pid, current->comm);
 
 	debug_show_held_locks(current);
+	panic("%s: Panicking due to potential bug", __func__);
 	dump_stack();
 	add_taint(TAINT_WARN, LOCKDEP_STILL_OK);
 }
