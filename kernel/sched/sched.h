@@ -2489,6 +2489,7 @@ extern const_debug unsigned int sysctl_sched_nr_migrate;
 extern const_debug unsigned int sysctl_sched_migration_cost;
 
 extern long calc_latency_offset(int prio);
+extern unsigned int sysctl_sched_min_granularity;
 
 #ifdef CONFIG_SCHED_HRTICK
 
@@ -3224,5 +3225,6 @@ static inline bool task_may_not_preempt(struct task_struct *task, int cpu)
 	return false;
 }
 extern u64 avg_vruntime(struct cfs_rq *cfs_rq);
+extern int entity_eligible(struct cfs_rq *cfs_rq, struct sched_entity *se);
 
 #endif /* CONFIG_RT_SOFTINT_OPTIMIZATION */
