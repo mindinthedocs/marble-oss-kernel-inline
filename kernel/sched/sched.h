@@ -2497,7 +2497,7 @@ extern const_debug unsigned int sysctl_sched_nr_migrate;
 extern const_debug unsigned int sysctl_sched_migration_cost;
 
 extern long calc_latency_offset(int prio);
-extern unsigned int sysctl_sched_min_granularity;
+extern unsigned int sysctl_sched_base_slice;
 
 #ifdef CONFIG_SCHED_HRTICK
 
