@@ -15,18 +15,17 @@ enum pause_client {
 	PAUSE_CORE_CTL	= 0x01,
 	PAUSE_THERMAL	= 0x02,
 	PAUSE_HYP	= 0x04,
+	PAUSE_SBT	= 0x08,
 };
 
 #define NO_BOOST 0
 #define FULL_THROTTLE_BOOST 1
 #define CONSERVATIVE_BOOST 2
 #define RESTRAINED_BOOST 3
-#define STORAGE_BOOST 4
 #define FULL_THROTTLE_BOOST_DISABLE -1
 #define CONSERVATIVE_BOOST_DISABLE -2
 #define RESTRAINED_BOOST_DISABLE -3
-#define STORAGE_BOOST_DISABLE -4
-#define MAX_NUM_BOOST_TYPE (STORAGE_BOOST+1)
+#define MAX_NUM_BOOST_TYPE (RESTRAINED_BOOST+1)
 
 #if IS_ENABLED(CONFIG_SCHED_WALT)
 
@@ -200,7 +199,6 @@ extern int core_ctl_set_boost(bool boost);
 extern void walt_set_cpus_taken(struct cpumask *set);
 extern void walt_unset_cpus_taken(struct cpumask *unset);
 extern cpumask_t walt_get_cpus_taken(void);
-extern void walt_get_cpus_in_state1(struct cpumask *cpus);
 
 extern int walt_pause_cpus(struct cpumask *cpus, enum pause_client client);
 extern int walt_resume_cpus(struct cpumask *cpus, enum pause_client client);
