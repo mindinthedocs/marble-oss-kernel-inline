@@ -67,6 +67,11 @@ enum qos_request_type {
 	MAX_REQUEST,
 };
 
+enum qos_request_type {
+	MIN_REQUEST,
+	MAX_REQUEST,
+};
+
 /* Note: this need to be in sync with migrate_type_names array */
 enum migrate_types {
 	GROUP_TO_RQ,
