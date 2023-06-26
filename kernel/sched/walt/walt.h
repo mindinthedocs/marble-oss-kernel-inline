@@ -67,11 +67,6 @@ enum qos_request_type {
 	MAX_REQUEST,
 };
 
-enum qos_request_type {
-	MIN_REQUEST,
-	MAX_REQUEST,
-};
-
 /* Note: this need to be in sync with migrate_type_names array */
 enum migrate_types {
 	GROUP_TO_RQ,
@@ -346,6 +341,9 @@ extern unsigned int cpuinfo_max_freq_cached;
 extern char sched_lib_name[LIB_PATH_LENGTH];
 extern unsigned int sched_lib_mask_force;
 
+extern cpumask_t cpus_for_sbt_pause;
+extern unsigned int sysctl_sched_sbt_delay_windows;
+
 /* WALT cpufreq interface */
 #define WALT_CPUFREQ_ROLLOVER		0x1
 #define WALT_CPUFREQ_CONTINUE		0x2
@@ -353,7 +351,6 @@ extern unsigned int sched_lib_mask_force;
 #define WALT_CPUFREQ_PL			0x8
 #define WALT_CPUFREQ_EARLY_DET		0x10
 #define WALT_CPUFREQ_BOOST_UPDATE	0x20
-#define WALT_CPUFREQ_ASYM_FIXUP		0x40
 
 #define CPUFREQ_REASON_LOAD		0
 #define CPUFREQ_REASON_BTR		0x1
