@@ -9,14 +9,13 @@
 #include "walt.h"
 #include "trace.h"
 
-static int neg_three = -3;
-static int three = 3;
+static int neg_four = -4;
+static int four = 4;
 static int two_hundred_fifty_five = 255;
 static unsigned int ns_per_sec = NSEC_PER_SEC;
 static unsigned int one_hundred_thousand = 100000;
 static unsigned int two_hundred_million = 200000000;
 static int __maybe_unused two = 2;
-static int __maybe_unused four = 4;
 static int one_hundred = 100;
 static int one_thousand = 1000;
 static int one_thousand_twenty_four = 1024;
@@ -86,6 +85,8 @@ unsigned int sysctl_fmax_cap[MAX_CLUSTERS];
 unsigned int sysctl_sched_sbt_pause_cpus;
 unsigned int sysctl_sched_sbt_delay_windows;
 unsigned int high_perf_cluster_freq_cap[MAX_CLUSTERS];
+unsigned int sysctl_sched_pipeline_cpus;
+unsigned int fmax_cap[MAX_FREQ_CAP][MAX_CLUSTERS];
 
 /* range is [1 .. INT_MAX] */
 static int sysctl_task_read_pid = 1;
@@ -147,7 +148,7 @@ unlock:
 	return ret;
 }
 
-DECLARE_BITMAP(sbt_bitmap, WALT_NR_CPUS);
+DECLARE_BITMAP(sysctl_bitmap, WALT_NR_CPUS);
 
 static int walt_proc_sbt_pause_handler(struct ctl_table *table,
 				       int write, void __user *buffer, size_t *lenp,
@@ -173,8 +174,42 @@ static int walt_proc_sbt_pause_handler(struct ctl_table *table,
 	}
 
 	bitmask = (unsigned long)sysctl_sched_sbt_pause_cpus;
-	bitmap_copy(sbt_bitmap, bitmaskp, WALT_NR_CPUS);
-	cpumask_copy(&cpus_for_sbt_pause, to_cpumask(sbt_bitmap));
+	bitmap_copy(sysctl_bitmap, bitmaskp, WALT_NR_CPUS);
+	cpumask_copy(&cpus_for_sbt_pause, to_cpumask(sysctl_bitmap));
+
+	written_once = true;
+unlock:
+	mutex_unlock(&mutex);
+	return ret;
+}
+
+/* pipeline cpus are non-prime cpus chosen to handle pipeline tasks, e.g. golds */
+static int walt_proc_pipeline_cpus_handler(struct ctl_table *table,
+					   int write, void __user *buffer, size_t *lenp,
+					   loff_t *ppos)
+{
+	int ret = 0;
+	unsigned int old_value;
+	unsigned long bitmask;
+	const unsigned long *bitmaskp = &bitmask;
+	static bool written_once;
+	static DEFINE_MUTEX(mutex);
+
+	mutex_lock(&mutex);
+
+	old_value = sysctl_sched_pipeline_cpus;
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret || !write || (old_value == sysctl_sched_pipeline_cpus))
+		goto unlock;
+
+	if (written_once) {
+		sysctl_sched_pipeline_cpus = old_value;
+		goto unlock;
+	}
+
+	bitmask = (unsigned long)sysctl_sched_pipeline_cpus;
+	bitmap_copy(sysctl_bitmap, bitmaskp, WALT_NR_CPUS);
+	cpumask_copy(&cpus_for_pipeline, to_cpumask(sysctl_bitmap));
 
 	written_once = true;
 unlock:
@@ -231,57 +266,6 @@ static int sched_task_read_pid_handler(struct ctl_table *table, int write,
 	mutex_unlock(&sysctl_pid_mutex);
 
 	return ret;
-}
-
-/*
- * walt_task_rq_lock - lock p->pi_lock and lock the rq @p resides on.
- */
-static struct rq *walt_task_rq_lock(struct task_struct *p, struct rq_flags *rf)
-	__acquires(p->pi_lock)
-	__acquires(rq->lock)
-{
-	struct rq *rq;
-
-	for (;;) {
-		raw_spin_lock_irqsave(&p->pi_lock, rf->flags);
-		rq = task_rq(p);
-		raw_spin_rq_lock(rq);
-		/*
-		 *	move_queued_task()		task_rq_lock()
-		 *
-		 *	ACQUIRE (rq->lock)
-		 *	[S] ->on_rq = MIGRATING		[L] rq = task_rq()
-		 *	WMB (__set_task_cpu())		ACQUIRE (rq->lock);
-		 *	[S] ->cpu = new_cpu		[L] task_rq()
-		 *					[L] ->on_rq
-		 *	RELEASE (rq->lock)
-		 *
-		 * If we observe the old CPU in task_rq_lock(), the acquire of
-		 * the old rq->lock will fully serialize against the stores.
-		 *
-		 * If we observe the new CPU in task_rq_lock(), the address
-		 * dependency headed by '[L] rq = task_rq()' and the acquire
-		 * will pair with the WMB to ensure we then also see migrating.
-		 */
-		if (likely(rq == task_rq(p) && !task_on_rq_migrating(p))) {
-			rq_pin_lock(rq, rf);
-			return rq;
-		}
-		raw_spin_rq_unlock(rq);
-		raw_spin_unlock_irqrestore(&p->pi_lock, rf->flags);
-
-		while (unlikely(task_on_rq_migrating(p)))
-			cpu_relax();
-	}
-}
-
-/* included for consistency */
-static inline void
-walt_task_rq_unlock(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
-	__releases(rq->lock)
-	__releases(p->pi_lock)
-{
-	task_rq_unlock(rq, p, rf);
 }
 
 enum {
@@ -430,16 +414,16 @@ static int sched_task_handler(struct ctl_table *table, int write,
 			wts->low_latency &= ~WALT_LOW_LATENCY_PROCFS;
 		break;
 	case PIPELINE:
-		rq = walt_task_rq_lock(task, &rf);
+		rq = task_rq_lock(task, &rf);
 		if (READ_ONCE(task->__state) == TASK_DEAD) {
 			ret = -EINVAL;
-			walt_task_rq_unlock(rq, task, &rf);
+			task_rq_unlock(rq, task, &rf);
 			goto put_task;
 		}
 		if (val) {
 			ret = add_pipeline(wts);
 			if (ret < 0) {
-				walt_task_rq_unlock(rq, task, &rf);
+				task_rq_unlock(rq, task, &rf);
 				goto put_task;
 			}
 			wts->low_latency |= WALT_LOW_LATENCY_PIPELINE;
@@ -447,7 +431,7 @@ static int sched_task_handler(struct ctl_table *table, int write,
 			wts->low_latency &= ~WALT_LOW_LATENCY_PIPELINE;
 			remove_pipeline(wts);
 		}
-		walt_task_rq_unlock(rq, task, &rf);
+		task_rq_unlock(rq, task, &rf);
 		break;
 	case LOAD_BOOST:
 		if (pid_and_val[1] < -90 || pid_and_val[1] > 90) {
@@ -778,8 +762,8 @@ struct ctl_table walt_table[] = {
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= sched_boost_handler,
-		.extra1		= &neg_three,
-		.extra2		= &three,
+		.extra1		= &neg_four,
+		.extra2		= &four,
 	},
 	{
 		.procname	= "sched_conservative_pl",
@@ -1231,6 +1215,15 @@ struct ctl_table walt_table[] = {
 		.extra2		= SYSCTL_INT_MAX,
 	},
 	{
+		.procname	= "sched_pipeline_cpus",
+		.data		= &sysctl_sched_pipeline_cpus,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= walt_proc_pipeline_cpus_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
 		.procname	= "sched_max_freq_partial_halt",
 		.data		= &sysctl_max_freq_partial_halt,
 		.maxlen		= sizeof(unsigned int),
@@ -1267,7 +1260,7 @@ struct ctl_table walt_base_table[] = {
 
 void walt_tunables(void)
 {
-	int i;
+	int i, j;
 
 	for (i = 0; i < MAX_MARGIN_LEVELS; i++) {
 		sysctl_sched_capacity_margin_up_pct[i] = 95; /* ~5% margin */
@@ -1311,5 +1304,10 @@ void walt_tunables(void)
 	for (i = 0; i < MAX_CLUSTERS; i++) {
 		sysctl_fmax_cap[i] = FREQ_QOS_MAX_DEFAULT_VALUE;
 		high_perf_cluster_freq_cap[i] = FREQ_QOS_MAX_DEFAULT_VALUE;
+	}
+
+	for (i = 0; i < MAX_FREQ_CAP; i++) {
+		for (j = 0; j < MAX_CLUSTERS; j++)
+			fmax_cap[i][j] = FREQ_QOS_MAX_DEFAULT_VALUE;
 	}
 }
