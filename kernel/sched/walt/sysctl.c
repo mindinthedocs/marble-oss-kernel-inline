@@ -1421,4 +1421,9 @@ void walt_tunables(void)
 		for (j = 0; j < MAX_CLUSTERS; j++)
 			fmax_cap[i][j] = FREQ_QOS_MAX_DEFAULT_VALUE;
 	}
+
+	for (i = 0; i < MAX_FREQ_CAP; i++) {
+		for (j = 0; j < MAX_CLUSTERS; j++)
+			fmax_cap[i][j] = FREQ_QOS_MAX_DEFAULT_VALUE;
+	}
 }

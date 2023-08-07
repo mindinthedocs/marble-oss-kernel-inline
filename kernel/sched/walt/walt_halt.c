@@ -193,13 +193,7 @@ static int drain_rq_cpu_stop(void *data)
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu_of(rq));
 
 	rq_lock_irqsave(rq, &rf);
-	/* rq lock is pinned */
-
-	/* migrate tasks assumes that the lock is pinned, and will unlock/repin */
 	migrate_tasks(rq, &rf);
-
-	/* __balance_callbacks can unlock and relock the rq lock. unpin */
-	rq_unpin_lock(rq, &rf);
 
 	/*
 	 * service any callbacks that were accumulated, prior to unlocking. such that
@@ -211,8 +205,7 @@ static int drain_rq_cpu_stop(void *data)
 	if (wrq->enqueue_counter)
 		WALT_BUG(WALT_BUG_WALT, NULL, "cpu: %d task was re-enqueued", cpu_of(rq));
 
-	/* lock is no longer pinned, raw unlock using same flags as locking */
-	raw_spin_rq_unlock_irqrestore(rq, rf.flags);
+	rq_unlock_irqrestore(rq, &rf);
 
 	return 0;
 }
@@ -269,6 +262,7 @@ static int __ref try_drain_rqs(void *data)
 
 void restrict_cpus_and_freq(struct cpumask *cpus)
 {
+	s32 max_freq_val;
 	struct cpumask restrict_cpus;
 	int cpu = 0;
 
@@ -277,10 +271,12 @@ void restrict_cpus_and_freq(struct cpumask *cpus)
 	if (cpumask_intersects(cpus, cpu_partial_halt_mask) &&
 			!cpumask_intersects(cpus, cpu_halt_mask) &&
 			is_state1()) {
+		max_freq_val = (s32)sysctl_max_freq_partial_halt;
 		for_each_cpu(cpu, cpus)
 			fmax_cap[PARTIAL_HALT_CAP][cpu_cluster(cpu)->id] =
 				sysctl_max_freq_partial_halt;
 	} else {
+		max_freq_val = FREQ_QOS_MAX_DEFAULT_VALUE;
 		for_each_cpu(cpu, cpus) {
 			cpumask_or(&restrict_cpus, &restrict_cpus, &(cpu_cluster(cpu)->cpus));
 			fmax_cap[PARTIAL_HALT_CAP][cpu_cluster(cpu)->id] =
@@ -288,7 +284,7 @@ void restrict_cpus_and_freq(struct cpumask *cpus)
 		}
 	}
 
-	update_fmax_cap_capacities(PARTIAL_HALT_CAP);
+	add_freq_qos_request(restrict_cpus, max_freq_val, QOS_PARTIAL_HALT, MAX_REQUEST);
 }
 
 struct task_struct *walt_drain_thread;

@@ -177,8 +177,25 @@ static void waltgov_calc_avg_cap(struct waltgov_policy *wg_policy, u64 curr_ws,
 {
 	u64 last_ws = wg_policy->last_ws;
 	unsigned int avg_freq;
+	int cpu;
 
-	BUG_ON(curr_ws < last_ws);
+	if (curr_ws < last_ws) {
+		printk_deferred("============ WALT CPUFREQ DUMP START ==============\n");
+		for_each_online_cpu(cpu) {
+			struct waltgov_cpu *wg_cpu = &per_cpu(waltgov_cpu, cpu);
+			struct waltgov_policy *wg_policy_internal = wg_cpu->wg_policy;
+
+			printk_deferred("cpu=%d walt_load->ws=%llu and policy->last_ws=%llu\n",
+					wg_cpu->cpu, wg_cpu->walt_load.ws,
+					wg_policy_internal->last_ws);
+		}
+		printk_deferred("============ WALT CPUFREQ DUMP END  ==============\n");
+		WALT_BUG(WALT_BUG_WALT, NULL,
+				"policy->related_cpus=0x%x curr_ws=%llu < last_ws=%llu",
+				cpumask_bits(wg_policy->policy->related_cpus)[0], curr_ws,
+				last_ws);
+	}
+
 	if (curr_ws <= last_ws)
 		return;
 
@@ -292,18 +309,12 @@ static unsigned int get_next_freq(struct waltgov_policy *wg_policy,
 		}
 	}
 
-	if (freq > fmax_cap[SMART_FMAX_CAP][cluster->id]) {
+	if (freq > fmax_cap[SMART_FMAX_CAP][cluster->id])
 		freq = fmax_cap[SMART_FMAX_CAP][cluster->id];
-		wg_driv_cpu->reasons |= CPUFREQ_REASON_SMART_FMAX_CAP;
-	}
-	if (freq > fmax_cap[HIGH_PERF_CAP][cluster->id]) {
+	if (freq > fmax_cap[HIGH_PERF_CAP][cluster->id])
 		freq = fmax_cap[HIGH_PERF_CAP][cluster->id];
-		wg_driv_cpu->reasons |= CPUFREQ_REASON_HIGH_PERF_CAP;
-	}
-	if (freq > fmax_cap[PARTIAL_HALT_CAP][cluster->id]) {
+	if (freq > fmax_cap[PARTIAL_HALT_CAP][cluster->id])
 		freq = fmax_cap[PARTIAL_HALT_CAP][cluster->id];
-		wg_driv_cpu->reasons |= CPUFREQ_REASON_PARTIAL_HALT_CAP;
-	}
 
 	if (wg_policy->cached_raw_freq && freq == wg_policy->cached_raw_freq &&
 		!wg_policy->need_freq_update) {
