@@ -53,6 +53,16 @@ enum task_event {
 	IRQ_UPDATE	= 5,
 };
 
+enum qos_clients {
+	/* add new clients above this line */
+	MAX_QOS_CLIENT
+};
+
+enum qos_request_type {
+	MIN_REQUEST,
+	MAX_REQUEST,
+};
+
 /* Note: this need to be in sync with migrate_type_names array */
 enum migrate_types {
 	GROUP_TO_RQ,
@@ -170,8 +180,6 @@ struct walt_sched_cluster {
 	unsigned int		walt_internal_freq_limit;
 	u64			aggr_grp_load;
 	unsigned long		util_to_cost[1024];
-	u64			found_ts;
-	unsigned int		smart_fmax_cap;
 };
 
 extern struct walt_sched_cluster *sched_cluster[WALT_NR_CPUS];
@@ -224,11 +232,8 @@ extern int max_possible_cluster_id;
 extern unsigned int __read_mostly sched_init_task_load_windows;
 extern unsigned int __read_mostly sched_load_granule;
 
-#define SCHED_IDLE_ENOUGH_DEFAULT 30
-#define SCHED_CLUSTER_UTIL_THRES_PCT_DEFAULT 40
-
-extern unsigned int sysctl_sched_idle_enough_clust[MAX_CLUSTERS];
-extern unsigned int sysctl_sched_cluster_util_thres_pct_clust[MAX_CLUSTERS];
+extern unsigned int sysctl_sched_idle_enough;
+extern unsigned int sysctl_sched_cluster_util_thres_pct;
 
 /* 1ms default for 20ms window size scaled to 1024 */
 extern unsigned int sysctl_sched_min_task_util_for_boost;
@@ -847,6 +852,8 @@ extern int walt_find_energy_efficient_cpu(struct task_struct *p, int prev_cpu,
 					int sync, int sibling_count_hint);
 extern int walt_find_cluster_packing_cpu(int start_cpu);
 extern bool walt_choose_packing_cpu(int packing_cpu, struct task_struct *p);
+extern void add_freq_qos_request(struct cpumask max_freq_cpus, s32 max_freq,
+		enum qos_clients client, enum qos_request_type type);
 
 static inline unsigned int cpu_max_possible_freq(int cpu)
 {
@@ -1061,9 +1068,9 @@ static inline int walt_find_and_choose_cluster_packing_cpu(int start_cpu, struct
 	int packing_cpu;
 
 	/* if idle_enough feature is not enabled */
-	if (!sysctl_sched_idle_enough_clust[cluster->id])
+	if (!sysctl_sched_idle_enough)
 		return -1;
-	if (!sysctl_sched_cluster_util_thres_pct_clust[cluster->id])
+	if (!sysctl_sched_cluster_util_thres_pct)
 		return -1;
 
 	/* find all unhalted active cpus */
@@ -1088,16 +1095,15 @@ static inline int walt_find_and_choose_cluster_packing_cpu(int start_cpu, struct
 		return -1;
 
 	/* if cluster util is high */
-	if (sched_get_cluster_util_pct(cluster) >=
-	    sysctl_sched_cluster_util_thres_pct_clust[cluster->id])
+	if (sched_get_cluster_util_pct(cluster) >= sysctl_sched_cluster_util_thres_pct)
 		return -1;
 
 	/* if cpu utilization is high */
-	if (cpu_util(packing_cpu) >= sysctl_sched_idle_enough_clust[cluster->id])
+	if (cpu_util(packing_cpu) >= sysctl_sched_idle_enough)
 		return -1;
 
 	/* don't pack big tasks */
-	if (task_util(p) >= sysctl_sched_idle_enough_clust[cluster->id])
+	if (task_util(p) >= sysctl_sched_idle_enough)
 		return -1;
 
 	if (task_reject_partialhalt_cpu(p, packing_cpu))
@@ -1109,46 +1115,6 @@ static inline int walt_find_and_choose_cluster_packing_cpu(int start_cpu, struct
 
 	/* the packing cpu can be used, so pack! */
 	return packing_cpu;
-}
-
-extern void update_cpu_capacity_helper(int cpu);
-
-static inline bool has_internal_freq_limit_changed(struct walt_sched_cluster *cluster)
-{
-	unsigned int internal_freq;
-	int i;
-
-	internal_freq = cluster->walt_internal_freq_limit;
-
-	cluster->walt_internal_freq_limit = cluster->max_freq;
-	for (i = 0; i < MAX_FREQ_CAP; i++)
-		cluster->walt_internal_freq_limit = min(fmax_cap[i][cluster->id],
-					     cluster->walt_internal_freq_limit);
-	return cluster->walt_internal_freq_limit != internal_freq;
-}
-
-static inline void update_smart_fmax_capacity(struct walt_sched_cluster *cluster)
-{
-	unsigned long fmax_capacity = arch_scale_cpu_capacity(cpumask_first(&cluster->cpus));
-
-	cluster->smart_fmax_cap = mult_frac(fmax_capacity,
-			fmax_cap[SMART_FMAX_CAP][cluster->id],
-						 cluster->max_possible_freq);
-}
-
-static inline void update_fmax_cap_capacities(int type)
-{
-	struct walt_sched_cluster *cluster;
-	int cpu;
-
-	for_each_sched_cluster(cluster) {
-		if (has_internal_freq_limit_changed(cluster)) {
-			if (type == SMART_FMAX_CAP)
-				update_smart_fmax_capacity(cluster);
-			for_each_cpu(cpu, &cluster->cpus)
-				update_cpu_capacity_helper(cpu);
-		}
-	}
 }
 
 extern int add_pipeline(struct walt_task_struct *wts);
