@@ -702,7 +702,6 @@ struct dl_rq {
 		u64		next;
 	} earliest_dl;
 
-	unsigned long		dl_nr_migratory;
 	int			overloaded;
 
 	/*
