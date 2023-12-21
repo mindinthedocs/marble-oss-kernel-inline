@@ -7516,7 +7516,8 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
 	int next_buddy_marked = 0;
 	int cse_is_idle, pse_is_idle;
-	bool preempt = false, nopreempt = false;
+	bool ignore = false;
+	bool preempt = false;
 
 	if (unlikely(se == pse))
 		return;
@@ -7581,6 +7582,12 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
     			wake_flags, se, pse, next_buddy_marked, sysctl_sched_wakeup_granularity);
 
 
+	trace_android_rvh_check_preempt_wakeup(rq, p, &preempt, &ignore,
+				wake_flags, se, pse, next_buddy_marked);
+	if (preempt)
+		goto preempt;
+	if (ignore)
+		return;
 	/*
 	 * XXX pick_eevdf(cfs_rq) != se ?
 	 */
