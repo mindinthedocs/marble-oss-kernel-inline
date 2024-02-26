@@ -15,7 +15,7 @@
 
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
-#include "wm_adsp.h"
+#include "cs35l43_wm_adsp.h"
 #include "cs35l43.h"
 #include <sound/cs35l43.h>
 

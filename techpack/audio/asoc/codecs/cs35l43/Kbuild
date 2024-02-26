@@ -66,7 +66,7 @@ ifdef CONFIG_SND_SOC_CS35L43
 	CS35L43_OBJS += cs35l43.o
 	CS35L43_OBJS += cs35l43-i2c.o
 	CS35L43_OBJS += cs35l43-tables.o
-	CS35L43_OBJS += ca35l43_wm_adsp.o
+	CS35L43_OBJS += cs35l43_wm_adsp.o
 	#CS35L43_OBJS += send_data_to_xlog.o
 endif
 

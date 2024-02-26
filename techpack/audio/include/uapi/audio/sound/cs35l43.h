@@ -105,7 +105,7 @@ enum cs35l43_low_pwr_mode {
 };
 
 struct cs35l43_private {
-	struct wm_adsp dsp; /* needs to be first member */
+	struct cs35l43_wm_adsp dsp; /* needs to be first member */
 	struct snd_soc_component *component;
 	struct cs35l43_platform_data pdata;
 	struct device *dev;

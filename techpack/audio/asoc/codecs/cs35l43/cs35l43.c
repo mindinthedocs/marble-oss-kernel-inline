@@ -46,7 +46,7 @@
 #include <linux/timekeeping.h>
 #include <linux/mmhardware_sysfs.h>
 
-#include "wm_adsp.h"
+#include "cs35l43_wm_adsp.h"
 #include "cs35l43.h"
 #include <sound/cs35l43.h>
 
@@ -212,7 +212,7 @@ static int cs35l43_delta_select_get(struct snd_kcontrol *kcontrol,
 
 static int cs35l43_apply_delta_tuning(struct cs35l43_private *cs35l43)
 {
-	struct wm_adsp *dsp = &cs35l43->dsp;
+	struct cs35l43_wm_adsp *dsp = &cs35l43->dsp;
 	int ret = 0;
 	const char *fwf_name;
 	char filename[NAME_MAX];
@@ -227,7 +227,7 @@ static int cs35l43_apply_delta_tuning(struct cs35l43_private *cs35l43)
 	snprintf(filename, NAME_MAX, "delta-%d", cs35l43->delta_requested);
 	dsp->fwf_name = filename;
 
-	ret = wm_adsp_load_coeff(dsp);
+	ret = cs35l43_wm_adsp_load_coeff(dsp);
 	if (ret)
 		dev_err(cs35l43->dev, "Error applying delta file %s: %d\n",
 				filename, ret);
@@ -459,21 +459,21 @@ static const struct snd_kcontrol_new cs35l43_aud_controls[] = {
 	SOC_SINGLE_RANGE("ASPRX3 Slot Position", CS35L43_ASP_FRAME_CONTROL5, 16, 0, 7, 0),
 	SOC_SINGLE_EXT("Delta Select", SND_SOC_NOPM, 0, 10, 0,
 			cs35l43_delta_select_get, cs35l43_delta_select_put),
-	WM_ADSP2_PRELOAD_SWITCH("DSP1", 1),
-	WM_ADSP_FW_CONTROL("DSP1", 0),
+	cs35l43_wm_adsp2_PRELOAD_SWITCH("DSP1", 1),
+	cs35l43_wm_adsp_FW_CONTROL("DSP1", 0),
 	SOC_ENUM_EXT("Channel Swap", channel_swap_enum,
 		cs35l43_channel_swap_get, cs35l43_channel_swap_put),
 	SOC_SINGLE("Noise Gate", CS35L43_NG_CONFIG, 0, 0x3FFF, 0),
 	/*calibrating ambient get/set, cal_r get/set, dsp mode(playback or calibrate) get/set */
 	SOC_SINGLE_EXT("DSP Set CAL_AMBIENT", SND_SOC_NOPM, 0, 0xFFFFFF, 0,
-				wm_adsp_cal_ambient_get, wm_adsp_cal_ambient_put),
+				cs35l43_wm_adsp_cal_ambient_get, cs35l43_wm_adsp_cal_ambient_put),
 	SOC_SINGLE_EXT("DSP Set CAL_R", SND_SOC_NOPM, 0, 0xFFFFFF, 0,
-			   wm_adsp_set_cal_r_get, wm_adsp_set_cal_r_put),
+			   cs35l43_wm_adsp_set_cal_r_get, cs35l43_wm_adsp_set_cal_r_put),
 	SOC_SINGLE_EXT("DSP Get CAL_R", SND_SOC_NOPM, 0, 0xFFFFFF, 0,
-			   wm_adsp_get_cal_r_get, wm_adsp_get_cal_r_put),
+			   cs35l43_wm_adsp_get_cal_r_get, cs35l43_wm_adsp_get_cal_r_put),
 	SOC_SINGLE_EXT("DSP Get CAL_STATUS", SND_SOC_NOPM, 0, 0xFFFFFF, 0,
-			   wm_adsp_cal_status_get, wm_adsp_cal_status_put),
-	SOC_ENUM_EXT("DSP Mode", dsp_mode_enum, wm_adsp_dsp_mode_get, wm_adsp_dsp_mode_put),
+			   cs35l43_wm_adsp_cal_status_get, cs35l43_wm_adsp_cal_status_put),
+	SOC_ENUM_EXT("DSP Mode", dsp_mode_enum, cs35l43_wm_adsp_dsp_mode_get, cs35l43_wm_adsp_dsp_mode_put),
 
 };
 static int cs35l43_dsp_preload_ev(struct snd_soc_dapm_widget *w,
@@ -530,7 +530,7 @@ static int cs35l43_write_seq_add(struct cs35l43_private *cs35l43,
 		return -ENOMEM;
 	}
 
-	ret = wm_adsp_read_ctl(&cs35l43->dsp, sequence->name,
+	ret = cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, sequence->name,
 			WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, (void *)buf,
 			sequence->length * sizeof(u32));
 	if (ret != 0) {
@@ -650,7 +650,7 @@ write_exit:
 		buf[i] = cpu_to_be32(buf[i]);
 	}
 
-	ret = wm_adsp_write_ctl(&cs35l43->dsp, sequence->name,
+	ret = cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, sequence->name,
 		WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, (void *)buf,
 		sequence->length * sizeof(u32));
 	goto exit;
@@ -679,7 +679,7 @@ static int cs35l43_write_seq_update(struct cs35l43_private *cs35l43,
 		return -ENOMEM;
 	}
 
-	ret = wm_adsp_read_ctl(&cs35l43->dsp, sequence->name,
+	ret = cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, sequence->name,
 			WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, (void *)buf,
 			sequence->length * sizeof(u32));
 	if (ret != 0) {
@@ -740,7 +740,7 @@ static int cs35l43_write_seq_update(struct cs35l43_private *cs35l43,
 		buf[i] = cpu_to_be32(buf[i]);
 	}
 
-	ret = wm_adsp_write_ctl(&cs35l43->dsp, sequence->name,
+	ret = cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, sequence->name,
 			WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, (void *)buf,
 			sequence->length * sizeof(u32));
 
@@ -770,7 +770,7 @@ static int cs35l43_write_seq_init(struct cs35l43_private *cs35l43,
 		return -ENOMEM;
 	}
 
-	ret = wm_adsp_read_ctl(&cs35l43->dsp, sequence->name,
+	ret = cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, sequence->name,
 			WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, (void *)buf,
 			sequence->length * sizeof(u32));
 	if (ret != 0) {
@@ -883,17 +883,17 @@ static int cs35l43_dsp_reset(struct cs35l43_private *cs35l43)
 	/* Clear WDT status */
 	regmap_write(cs35l43->regmap, CS35L43_DSP1_WDT_STATUS, 0x03);
 
-	ret = wm_adsp_write_ctl(&cs35l43->dsp, "CALL_RAM_INIT", WMFW_ADSP2_XM, 0x1800d6,
+	ret = cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, "CALL_RAM_INIT", WMFW_ADSP2_XM, 0x1800d6,
 				&val, sizeof(u32));
 	if (ret < 0)
 		dev_err(cs35l43->dev, "Failed to clear CALL_RAM_INIT: %d\n", ret);
 
-	ret = wm_adsp_write_ctl(&cs35l43->dsp, "HALO_STATE", WMFW_ADSP2_XM, 0x1800d6,
+	ret = cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, "HALO_STATE", WMFW_ADSP2_XM, 0x1800d6,
 				&val, sizeof(u32));
 	if (ret < 0)
 		dev_err(cs35l43->dev, "Failed to clear HALO_STATE: %d\n", ret);
 
-	ret = wm_adsp_write_ctl(&cs35l43->dsp, "AUDIO_STATE", WMFW_ADSP2_XM, 0x5f212,
+	ret = cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, "AUDIO_STATE", WMFW_ADSP2_XM, 0x5f212,
 				&val, sizeof(u32));
 	if (ret < 0)
 		dev_err(cs35l43->dev, "Failed to clear AUDIO_STATE: %d\n", ret);
@@ -912,7 +912,7 @@ static int cs35l43_dsp_reset(struct cs35l43_private *cs35l43)
 
 	do {
 		usleep_range(10000, 10100);
-		wm_adsp_read_ctl(&cs35l43->dsp, "HALO_STATE",
+		cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "HALO_STATE",
 			WMFW_ADSP2_XM, 0x1800d6, &val, sizeof(u32));
 		val = be32_to_cpu(val);
 		dev_info(cs35l43->dev, "halo_state: %x\n", val);
@@ -936,7 +936,7 @@ static int cs35l43_dsp_reset(struct cs35l43_private *cs35l43)
 	regmap_write(cs35l43->regmap, CS35L43_DSP1_WDT_STATUS, 0x03);
 
 	val = 0;
-	ret = wm_adsp_write_ctl(&cs35l43->dsp, "AUDIO_STATE", WMFW_ADSP2_XM, 0x5f212,
+	ret = cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, "AUDIO_STATE", WMFW_ADSP2_XM, 0x5f212,
 				&val, sizeof(u32));
 	if (ret < 0)
 		dev_err(cs35l43->dev, "Failed to clear AUDIO_STATE: %d\n", ret);
@@ -945,7 +945,7 @@ static int cs35l43_dsp_reset(struct cs35l43_private *cs35l43)
 	regmap_write(cs35l43->regmap, CS35L43_DSP1_CCM_CORE_CONTROL, 0x80);
 
 	val = cpu_to_be32(1);
-	ret = wm_adsp_write_ctl(&cs35l43->dsp, "CALL_RAM_INIT", WMFW_ADSP2_XM, 0x1800d6,
+	ret = cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, "CALL_RAM_INIT", WMFW_ADSP2_XM, 0x1800d6,
 				&val, sizeof(u32));
 	if (ret < 0)
 		dev_err(cs35l43->dev, "Failed to set CALL_RAM_INIT: %d\n", ret);
@@ -1006,7 +1006,7 @@ static int cs35l43_dsp_preload_ev(struct snd_soc_dapm_widget *w,
 					   CS35L43_PLL_FORCE_EN_MASK);
 			cs35l43->limit_spi_clock(cs35l43, false);
 		}
-		wm_adsp_early_event(w, kcontrol, event);
+		cs35l43_wm_adsp_early_event(w, kcontrol, event);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		if (cs35l43->dsp.running)
@@ -1027,8 +1027,8 @@ static int cs35l43_dsp_preload_ev(struct snd_soc_dapm_widget *w,
 		if (cs35l43->dsp.preloaded)
 			return 0;
 
-		wm_adsp_early_event(w, kcontrol, event);
-		wm_adsp_event(w, kcontrol, event);
+		cs35l43_wm_adsp_early_event(w, kcontrol, event);
+		cs35l43_wm_adsp_event(w, kcontrol, event);
 		cs35l43->hibernate_state = CS35L43_HIBERNATE_NOT_LOADED;
 		break;
 	default:
@@ -1054,7 +1054,7 @@ static int cs35l43_dsp_audio_ev(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_POST_PMU:
 		if (!cs35l43->first_event) {
 			//[async load firmware change]
-			wm_adsp_event(w, kcontrol, event);
+			cs35l43_wm_adsp_event(w, kcontrol, event);
 			if (cs35l43->low_pwr_mode == CS35L43_LOW_PWR_MODE_STANDBY)
 				regmap_write(cs35l43->regmap, CS35L43_DSP_VIRTUAL1_MBOX_1,
 							CS35L43_MBOX_CMD_PREVENT_HIBERNATE);
@@ -1063,7 +1063,7 @@ static int cs35l43_dsp_audio_ev(struct snd_soc_dapm_widget *w,
 			//apply calibration value
 			cs35l43_apply_calibration(w);
 			val = cpu_to_be32(1);
-			wm_adsp_write_ctl(&cs35l43->dsp, "ALLOW_ACT_BOOT",
+			cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, "ALLOW_ACT_BOOT",
 						WMFW_ADSP2_XM, 0x5f224, &val, sizeof(u32));
 			cs35l43->first_event = true;
 		}
@@ -1073,7 +1073,7 @@ static int cs35l43_dsp_audio_ev(struct snd_soc_dapm_widget *w,
 		regmap_write(cs35l43->regmap, CS35L43_DSP_VIRTUAL1_MBOX_1,
 				CS35L43_MBOX_CMD_AUDIO_PLAY);
 		usleep_range(2000, 2200);
-		wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
+		cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
 			WMFW_ADSP2_XM, 0x5f212, &audio_state, sizeof(u32));
 		audio_state = be32_to_cpu(audio_state);
 		dev_info(cs35l43->dev, "PMU audio state post: 0x%x\n", audio_state);
@@ -1089,7 +1089,7 @@ static int cs35l43_dsp_audio_ev(struct snd_soc_dapm_widget *w,
 		regmap_write(cs35l43->regmap, CS35L43_DSP_VIRTUAL1_MBOX_1,
 				CS35L43_MBOX_CMD_AUDIO_PAUSE);
 		usleep_range(2000, 2200);
-		wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
+		cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
 			WMFW_ADSP2_XM, 0x5f212, &audio_state, sizeof(u32));
 		audio_state = be32_to_cpu(audio_state);
 		dev_info(cs35l43->dev, "PMD audio state post: 0x%x\n", audio_state);
@@ -1110,7 +1110,7 @@ static int cs35l43_check_dsp_regs(struct cs35l43_private *cs35l43)
 	int ret = 0;
 	unsigned int val;
 
-	ret = wm_adsp_read_ctl(&cs35l43->dsp, "HALO_STATE", WMFW_ADSP2_XM, 0x1820d6,
+	ret = cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "HALO_STATE", WMFW_ADSP2_XM, 0x1820d6,
 				&val, sizeof(u32));
 	if (ret < 0) {
 		dev_err(cs35l43->dev, "Failed to read HALO_STATE\n");
@@ -1123,7 +1123,7 @@ static int cs35l43_check_dsp_regs(struct cs35l43_private *cs35l43)
 		return -EINVAL;
 	}
 
-	ret = wm_adsp_read_ctl(&cs35l43->dsp, "ERROR", WMFW_ADSP2_XM, 0x5f212,
+	ret = cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "ERROR", WMFW_ADSP2_XM, 0x5f212,
 				&val, sizeof(u32));
 	if (ret < 0) {
 		dev_err(cs35l43->dev, "Failed to read AUDIO_SYSTEM ERROR\n");
@@ -1184,7 +1184,7 @@ static int cs35l43_log_dsp_err(struct cs35l43_private *cs35l43)
 	dev_info(cs35l43->dev, "%s\n", __func__);
 
 	for (i = 0; i < ARRAY_SIZE(regs); i++) {
-		wm_adsp_read_ctl(&cs35l43->dsp, regs[i].name,
+		cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, regs[i].name,
 				WMFW_ADSP2_XM, regs[i].id, &reg, sizeof(u32));
 		dev_info(cs35l43->dev, "%s (0x%x): 0x%x\n",
 				regs[i].name, regs[i].id, reg);
@@ -1235,11 +1235,11 @@ static int cs35l43_check_mailbox(struct cs35l43_private *cs35l43)
 	for (i = 0; i < 8; i++)
 		dev_dbg(cs35l43->dev, "mbox[%d]: 0x%x\n", i + 1, mbox[i]);
 
-	ret = wm_adsp_read_ctl(&cs35l43->dsp, "QUEUE_WT",
+	ret = cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "QUEUE_WT",
 		WMFW_ADSP2_XM, CS35L43_ALG_ID_MAILBOX, &write_ptr, sizeof(u32));
 	if (ret < 0)
 		return ret;
-	ret = wm_adsp_read_ctl(&cs35l43->dsp, "QUEUE_RD",
+	ret = cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "QUEUE_RD",
 		WMFW_ADSP2_XM, CS35L43_ALG_ID_MAILBOX, &read_ptr, sizeof(u32));
 	if (ret < 0)
 		return ret;
@@ -1296,7 +1296,7 @@ static int cs35l43_check_mailbox(struct cs35l43_private *cs35l43)
 	}  while (read_idx != write_idx);
 
 	write_ptr = cpu_to_be32(write_ptr);
-	wm_adsp_write_ctl(&cs35l43->dsp, "QUEUE_RD",
+	cs35l43_wm_adsp_write_ctl(&cs35l43->dsp, "QUEUE_RD",
 		WMFW_ADSP2_XM, CS35L43_ALG_ID_MAILBOX, &write_ptr, sizeof(u32));
 
 exit:
@@ -1322,19 +1322,19 @@ static void cs35l43_log_status(struct cs35l43_private *cs35l43)
 
 	cs35l43_check_mailbox(cs35l43);
 
-	wm_adsp_read_ctl(&cs35l43->dsp, "PM_CUR_STATE",
+	cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "PM_CUR_STATE",
 		WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, &pm_state, sizeof(u32));
-	wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
+	cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
 		WMFW_ADSP2_XM, 0x5f212, &audio_state, sizeof(u32));
 
 	dev_info(cs35l43->dev, "PM_STATE: 0x%x\tAUDIO_STATE: 0x%x\n",
 			       pm_state, audio_state);
 
-	wm_adsp_read_ctl(&cs35l43->dsp, "INVALID_STRM_CNT",
+	cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "INVALID_STRM_CNT",
 		WMFW_ADSP2_XM, 0x5f224, &reg, sizeof(u32));
 	dev_info(cs35l43->dev, "INVALID_STRM_CNT: %x\n", reg);
 	
-	wm_adsp_read_ctl(&cs35l43->dsp, "ACT_BOOT_CNT",
+	cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "ACT_BOOT_CNT",
 		WMFW_ADSP2_XM, 0x5f224, &reg, sizeof(u32));
 	dev_info(cs35l43->dev, "ACT_BOOT_CNT: %x\n", reg);
 
@@ -1367,9 +1367,9 @@ static int cs35l43_enter_hibernate(struct cs35l43_private *cs35l43)
 		regmap_write(cs35l43->regmap, CS35L43_WAKESRC_CTL,
 						CS35L43_WKSRC_I2C);
 
-	wm_adsp_read_ctl(&cs35l43->dsp, "PM_CUR_STATE",
+	cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "PM_CUR_STATE",
 		WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, &pm_state, sizeof(u32));
-	wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
+	cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "AUDIO_STATE",
 		WMFW_ADSP2_XM, 0x5f212, &audio_state, sizeof(u32));
 
 	dev_dbg(cs35l43->dev, "PM_STATE: 0x%x\tAUDIO_STATE: 0x%x\n",
@@ -1428,7 +1428,7 @@ static int cs35l43_exit_hibernate(struct cs35l43_private *cs35l43)
 		dev_err(cs35l43->dev, "Error during wakeup, PWRMGT_STS = 0x%x\n", status);
 
 	/* PM_CUR_STATE should be non-zero */
-	wm_adsp_read_ctl(&cs35l43->dsp, "PM_CUR_STATE",
+	cs35l43_wm_adsp_read_ctl(&cs35l43->dsp, "PM_CUR_STATE",
 		WMFW_ADSP2_XM, CS35L43_ALG_ID_PM, &status, sizeof(u32));
 	if (!status)
 		dev_err(cs35l43->dev, "Error during wakeup, PM_CUR_STATE = 0x%x\n", status);
@@ -2529,7 +2529,7 @@ static int cs35l43_component_probe(struct snd_soc_component *component)
 
 	cs35l43_set_pdata(cs35l43);
 	cs35l43->component = component;
-	wm_adsp2_component_probe(&cs35l43->dsp, component);
+	cs35l43_wm_adsp2_component_probe(&cs35l43->dsp, component);
 
 	cs35l43_ignore_suspend_widgets(component);
 
@@ -2541,7 +2541,7 @@ static void cs35l43_component_remove(struct snd_soc_component *component)
 
 }
 
-static const struct wm_adsp_region cs35l43_dsp1_regions[] = {
+static const struct cs35l43_wm_adsp_region cs35l43_dsp1_regions[] = {
 	{ .type = WMFW_HALO_PM_PACKED,	.base = CS35L43_DSP1_PMEM_0 },
 	{ .type = WMFW_HALO_XM_PACKED,	.base = CS35L43_DSP1_XMEM_PACKED_0 },
 	{ .type = WMFW_HALO_YM_PACKED,	.base = CS35L43_DSP1_YMEM_PACKED_0 },
@@ -2551,7 +2551,7 @@ static const struct wm_adsp_region cs35l43_dsp1_regions[] = {
 
 static int cs35l43_dsp_init(struct cs35l43_private *cs35l43)
 {
-	struct wm_adsp *dsp;
+	struct cs35l43_wm_adsp *dsp;
 	int ret;
 
 	dsp = &cs35l43->dsp;
@@ -2559,7 +2559,7 @@ static int cs35l43_dsp_init(struct cs35l43_private *cs35l43)
 	dsp->num = 1;
 	dsp->type = WMFW_HALO;
 	dsp->rev = 0;
-	dsp->fw = 9; /* 9 is WM_ADSP_FW_SPK_PROT in wm_adsp.c */
+	dsp->fw = 9; /* 9 is cs35l43_wm_adsp_FW_SPK_PROT in cs35l43_wm_adsp.c */
 	dsp->dev = cs35l43->dev;
 	dsp->regmap = cs35l43->regmap;
 	dsp->tuning_has_prefix = cs35l43->pdata.tuning_has_prefix;
@@ -2571,9 +2571,9 @@ static int cs35l43_dsp_init(struct cs35l43_private *cs35l43)
 	//[async load firmware change]
 	dsp->toggle_preload = false;
 
-	ret = wm_halo_init(dsp);
+	ret = cs35l43_wm_halo_init(dsp);
 	if (ret != 0) {
-		dev_err(cs35l43->dev, "wm_halo_init failed\n");
+		dev_err(cs35l43->dev, "cs35l43_wm_halo_init failed\n");
 		goto err;
 	}
 
@@ -2615,7 +2615,7 @@ static int cs35l43_compr_open(struct snd_soc_component *component,
 
 	for_each_rtd_dais(rtd, i, codec_dai) {
 		if (!strcmp(codec_dai->name, "cs35l43-dsp-textlog"))
-			return wm_adsp_compr_open(&cs35l43->dsp, stream);
+			return cs35l43_wm_adsp_compr_open(&cs35l43->dsp, stream);
 	}
 
 	dev_err(cs35l43->dev, "No DSP log DAI found\n");
@@ -2677,12 +2677,12 @@ static struct snd_soc_dai_driver cs35l43_dai[] = {
 
 static const struct snd_compress_ops cs35l43_compr_ops = {
 	.open = &cs35l43_compr_open,
-	.free = &wm_adsp_compr_free,
-	.set_params = &wm_adsp_compr_set_params,
-	.get_caps = &wm_adsp_compr_get_caps,
-	.trigger = &wm_adsp_compr_trigger,
-	.pointer = &wm_adsp_compr_pointer,
-	.copy = &wm_adsp_compr_copy,
+	.free = &cs35l43_wm_adsp_compr_free,
+	.set_params = &cs35l43_wm_adsp_compr_set_params,
+	.get_caps = &cs35l43_wm_adsp_compr_get_caps,
+	.trigger = &cs35l43_wm_adsp_compr_trigger,
+	.pointer = &cs35l43_wm_adsp_compr_pointer,
+	.copy = &cs35l43_wm_adsp_compr_copy,
 };
 
 static const struct snd_soc_component_driver soc_component_dev_cs35l43 = {
@@ -2898,7 +2898,7 @@ int cs35l43_probe(struct cs35l43_private *cs35l43,
 err_pm:
 	pm_runtime_disable(cs35l43->dev);
 	pm_runtime_put_noidle(cs35l43->dev);
-	wm_adsp2_remove(&cs35l43->dsp);
+	cs35l43_wm_adsp2_remove(&cs35l43->dsp);
 	mutex_destroy(&cs35l43->hb_lock);
 err:
 	regulator_bulk_disable(cs35l43->num_supplies, cs35l43->supplies);
@@ -2911,7 +2911,7 @@ int cs35l43_remove(struct cs35l43_private *cs35l43)
 	pm_runtime_disable(cs35l43->dev);
 	regulator_bulk_disable(cs35l43->num_supplies, cs35l43->supplies);
 	snd_soc_unregister_component(cs35l43->dev);
-	wm_adsp2_remove(&cs35l43->dsp);
+	cs35l43_wm_adsp2_remove(&cs35l43->dsp);
 	pm_runtime_put_noidle(cs35l43->dev);
 	mutex_destroy(&cs35l43->hb_lock);
 
