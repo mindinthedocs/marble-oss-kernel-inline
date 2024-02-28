@@ -255,7 +255,7 @@ ifneq (,$(filter $(TARGET_PRODUCT), mondrian))
 	CDEFINES += -DCONFIG_TARGET_PRODUCT_MONDRIAN
 endif
 
-ifneq (,$(filter $(TARGET_PRODUCT), marble))
+ifdef CONFIG_MACH_XIAOMI_MARBLE
 	CDEFINES += -DCONFIG_TARGET_PRODUCT_MARBLE
 endif
 
