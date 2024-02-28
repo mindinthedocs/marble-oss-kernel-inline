@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Goodix Touchscreen Driver
  * Copyright (C) 2020 - 2021 Goodix, Inc.
+ *
+ * Copyright (C) 2022 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,6 +53,9 @@
 #define CONFIG_DATA_ADDR_BRA			0x3E000
 #define CONFIG_DATA_ADDR_BRB			0x40000
 #define CONFIG_DATA_ADDR_BRD			0x3E000
+#define GOODIX_CFG_ID_ADDR_BRA			0x1006E
+#define GOODIX_CFG_ID_ADDR_BRB			0x10076
+#define GOODIX_CFG_ID_ADDR_BRD			0x10076
 
 #define HOLD_CPU_REG_W					0x0002
 #define HOLD_CPU_REG_R					0x2000
@@ -89,6 +95,7 @@ struct update_info_t {
 	u32 config_data_reg;
 	u32 misctl_reg;
 	u32 watch_dog_reg;
+	u32 config_id_reg;
 	u32 enable_misctl_val;
 };
 
@@ -102,6 +109,7 @@ struct update_info_t update_bra = {
 	CONFIG_DATA_ADDR_BRA,
 	MISCTL_REG_BRA,
 	WATCH_DOG_REG_BRA,
+	GOODIX_CFG_ID_ADDR_BRA,
 	ENABLE_MISCTL_BRA,
 };
 
@@ -115,6 +123,7 @@ struct update_info_t update_brb = {
 	CONFIG_DATA_ADDR_BRB,
 	MISCTL_REG_BRB,
 	WATCH_DOG_REG_BRB,
+	GOODIX_CFG_ID_ADDR_BRB,
 	ENABLE_MISCTL_BRB,
 };
 
@@ -128,6 +137,7 @@ struct update_info_t update_brd = {
 	CONFIG_DATA_ADDR_BRD,
 	MISCTL_REG_BRD,
 	WATCH_DOG_REG_BRD,
+	GOODIX_CFG_ID_ADDR_BRD,
 	ENABLE_MISCTL_BRD,
 };
 
@@ -184,9 +194,8 @@ struct  firmware_summary {
  * @firmware: firmware data structure
  */
 struct firmware_data {
-	struct firmware_summary fw_summary;
+	struct  firmware_summary fw_summary;
 	const struct firmware *firmware;
-	struct firmware *fw_sysfs;
 };
 
 struct config_data {
@@ -324,11 +333,7 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 	fw_summary = &fw_data->fw_summary;
 
 	/* copy firmware head info */
-	if (goodix_fw_update_ctrl.mode & UPDATE_MODE_SRC_SYSFS)
-		firmware = fw_data->fw_sysfs;
-	else
-		firmware = fw_data->firmware;
-
+	firmware = fw_data->firmware;
 	if (firmware->size < subsys_info_offset) {
 		ts_err("Invalid firmware size:%zu", firmware->size);
 		r = -EINVAL;
@@ -340,8 +345,7 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 	fw_summary->size = le32_to_cpu(fw_summary->size);
 	if (firmware->size != fw_summary->size + FW_FILE_CHECKSUM_OFFSET) {
 		ts_err("Bad firmware, size not match, %zu != %d",
-				firmware->size,
-				fw_summary->size + FW_FILE_CHECKSUM_OFFSET);
+			firmware->size, fw_summary->size + 6);
 		r = -EINVAL;
 		goto err_size;
 	}
@@ -386,6 +390,7 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 		fw_offset += fw_summary->subsys[i].size;
 	}
 
+#ifdef CONFIG_TOUCHSCREEN_GOODIX_BRL_DEBUG
 	ts_info("Firmware package protocol: V%u", fw_summary->protocol_ver);
 	ts_info("Firmware PID:GT%s", fw_summary->fw_pid);
 	ts_info("Firmware VID:%*ph", 4, fw_summary->fw_vid);
@@ -404,6 +409,7 @@ static int goodix_parse_firmware(struct firmware_data *fw_data)
 				fw_summary->subsys[i].flash_addr);
 		ts_debug("Subsystem Ptr:%p", fw_summary->subsys[i].data);
 	}
+#endif
 
 	if (fw_summary->chip_type == CHIP_TYPE_BRA &&
 		ic_type != IC_TYPE_BERLIN_A) {
@@ -433,29 +439,33 @@ err_size:
 static int goodix_fw_version_compare(struct fw_update_ctrl *fwu_ctrl)
 {
 	int ret = 0;
-	struct goodix_ts_core *cd = fwu_ctrl->core_data;
-	struct goodix_fw_version *ic_ver = &cd->fw_version;
-	struct goodix_ic_info *ic_info = &cd->ic_info;
+	struct goodix_fw_version fw_version;
 	struct firmware_summary *fw_summary = &fwu_ctrl->fw_data.fw_summary;
+	u32 config_id_reg = goodix_fw_update_ctrl.update_info->config_id_reg;
 	u32 file_cfg_id;
+	u32 ic_cfg_id;
 
 	/* compare fw_version */
-	if (!memcmp(ic_ver->rom_pid, GOODIX_NOCODE, 6) ||
-		!memcmp(ic_ver->patch_pid, GOODIX_NOCODE, 6)) {
+	ret = get_fw_version_info(&fw_version);
+	if (ret)
+		return -EINVAL;
+
+	if (!memcmp(fw_version.rom_pid, GOODIX_NOCODE, 6) ||
+		!memcmp(fw_version.patch_pid, GOODIX_NOCODE, 6)) {
 		ts_info("there is no code in the chip");
 		return COMPARE_NOCODE;
 	}
 
-	if (memcmp(ic_ver->patch_pid, fw_summary->fw_pid, FW_PID_LEN)) {
+	if (memcmp(fw_version.patch_pid, fw_summary->fw_pid, FW_PID_LEN)) {
 		ts_err("Product ID mismatch:%s != %s",
-			ic_ver->patch_pid, fw_summary->fw_pid);
+			fw_version.patch_pid, fw_summary->fw_pid);
 		return COMPARE_PIDMISMATCH;
 	}
 
-	ret = memcmp(ic_ver->patch_vid, fw_summary->fw_vid, FW_VID_LEN);
+	ret = memcmp(fw_version.patch_vid, fw_summary->fw_vid, FW_VID_LEN);
 	if (ret) {
 		ts_info("active firmware version:%*ph", FW_VID_LEN,
-				ic_ver->patch_vid);
+				fw_version.patch_vid);
 		ts_info("firmware file version: %*ph", FW_VID_LEN,
 				fw_summary->fw_vid);
 		return COMPARE_FW_NOTEQUAL;
@@ -466,9 +476,11 @@ static int goodix_fw_version_compare(struct fw_update_ctrl *fwu_ctrl)
 	if (fwu_ctrl->ic_config && fwu_ctrl->ic_config->len > 0) {
 		file_cfg_id =
 			goodix_get_file_config_id(fwu_ctrl->ic_config->data);
-		if (ic_info->version.config_id != file_cfg_id) {
+		goodix_reg_read(config_id_reg,
+			(u8 *)&ic_cfg_id, sizeof(ic_cfg_id));
+		if (ic_cfg_id != file_cfg_id) {
 			ts_info("ic_cfg_id:0x%x != file_cfg_id:0x%x",
-				ic_info->version.config_id, file_cfg_id);
+				ic_cfg_id, file_cfg_id);
 			return COMPARE_CFG_NOTEQUAL;
 		}
 		ts_info("config_id equal");
@@ -626,8 +638,7 @@ static int goodix_update_prepare(struct fw_update_ctrl *fwu_ctrl)
 	ts_info("Success hold CPU");
 
 	/* enable misctl clock */
-	if (fwu_ctrl->core_data->bus->ic_type == IC_TYPE_BERLIN_D ||
-			fwu_ctrl->core_data->bus->ic_type == IC_TYPE_NOTTINGHAM)
+	if (fwu_ctrl->core_data->bus->ic_type == IC_TYPE_BERLIN_D)
 		goodix_reg_write(misctl_reg, (u8 *)&enable_misctl_val, 4);
 	else
 		goodix_reg_write(misctl_reg, (u8 *)&enable_misctl_val, 1);
@@ -703,7 +714,7 @@ static int goodix_send_flash_cmd(struct goodix_flash_cmd *flash_cmd)
 	}
 	ts_info("flash cmd ack check pass");
 
-	msleep(50);
+	msleep(80);
 	retry = 20;
 	for (i = 0; i < retry; i++) {
 		ret = goodix_reg_read(flash_cmd_reg,
@@ -714,9 +725,8 @@ static int goodix_send_flash_cmd(struct goodix_flash_cmd *flash_cmd)
 			return 0;
 		}
 
-		ts_info("flash cmd status not ready, retry %d, ack 0x%x, status 0x%x, ret %d",
-				i, tmp_cmd.ack, tmp_cmd.status, ret);
-		usleep_range(10000, 11000);
+		ts_info("flash cmd status not ready, retry %d, ack 0x%x, status 0x%x, ret %d", i, tmp_cmd.ack, tmp_cmd.status, ret);
+		msleep(20);
 	}
 
 	ts_err("flash cmd status error %d, ack 0x%x, status 0x%x, ret %d",
@@ -773,7 +783,7 @@ static int goodix_flash_package(u8 subsys_type, u8 *pkg,
 
 		ret = goodix_send_flash_cmd(&flash_cmd);
 		if (!ret) {
-			ts_info("success write package to 0x%05X, len %d",
+			ts_info("success write package to 0x%x, len %d",
 				flash_addr, pkg_len - 4);
 			return 0;
 		}
@@ -817,7 +827,7 @@ static int goodix_flash_subsystem(struct fw_subsys_info *subsys)
 	while (total_size > 0) {
 		data_size = total_size > ISP_MAX_BUFFERSIZE ?
 				ISP_MAX_BUFFERSIZE : total_size;
-		ts_info("Flash firmware to 0x%05X,size:%u bytes",
+		ts_info("Flash firmware to %08x,size:%u bytes",
 			subsys_base_addr + offset, data_size);
 
 		memcpy(fw_packet, &subsys->data[offset], data_size);
@@ -828,7 +838,7 @@ static int goodix_flash_subsystem(struct fw_subsys_info *subsys)
 		r = goodix_flash_package(subsys->type, fw_packet,
 				subsys_base_addr + offset, data_size + 4);
 		if (r) {
-			ts_err("failed flash to 0x%05X,size:%u bytes",
+			ts_err("failed flash to %08x,size:%u bytes",
 			subsys_base_addr + offset, data_size);
 			break;
 		}
@@ -866,7 +876,7 @@ static int goodix_flash_firmware(struct fw_update_ctrl *fw_ctrl)
 	/* flash config data first if we have */
 	if (fw_ctrl->ic_config && fw_ctrl->ic_config->len) {
 		subsys_cfg.data = fw_ctrl->ic_config->data;
-		subsys_cfg.size = GOODIX_CFG_MAX_SIZE;
+		subsys_cfg.size = fw_ctrl->ic_config->len;
 		subsys_cfg.flash_addr = config_data_reg;
 		subsys_cfg.type = CONFIG_DATA_TYPE;
 		r = goodix_flash_subsystem(&subsys_cfg);
@@ -907,29 +917,15 @@ exit_flash:
  */
 static int goodix_update_finish(struct fw_update_ctrl *fwu_ctrl)
 {
-	struct goodix_ts_core *cd = fwu_ctrl->core_data;
 	int ret;
 
-	/* step 1: reset IC */
-	goodix_fw_update_reset(100);
-	/* step 2: read version */
-	ret = get_fw_version_info(&cd->fw_version);
-	if (ret < 0) {
-		ts_err("still failed to read version after upgraded");
-		return -EFAULT;
-	}
-	/* step 3: read ic info */
-	ret = cd->hw_ops->get_ic_info(cd, &cd->ic_info);
-	if (ret < 0) {
-		ts_err("still failed to read ic info after upgraded");
-		return -EFAULT;
-	}
-
+	if (goodix_fw_update_reset(100))
+		ts_err("reset abnormal");
 	ret = goodix_fw_version_compare(fwu_ctrl);
 	if (ret == COMPARE_EQUAL || ret == COMPARE_CFG_NOTEQUAL)
 		return 0;
 
-	return -EFAULT;
+	return -EINVAL;
 }
 
 /**
@@ -952,7 +948,7 @@ int goodix_fw_update_proc(struct fw_update_ctrl *fwu_ctrl)
 	if (!(fwu_ctrl->mode & UPDATE_MODE_FORCE)) {
 		ret = goodix_fw_version_compare(fwu_ctrl);
 		if (!ret) {
-			ts_info("no need to upgrade");
+			ts_info("firmware upgraded");
 			return 0;
 		}
 		ts_info("need to upgrade");
@@ -1044,29 +1040,75 @@ static ssize_t goodix_sysfs_update_en_store(
 	return -EINVAL;
 }
 
+static ssize_t goodix_sysfs_fwsize_show(
+		struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
+	int r = -EINVAL;
+
+	if (fw_ctrl && fw_ctrl->fw_data.firmware)
+		r = snprintf(buf, PAGE_SIZE, "%zu\n",
+				fw_ctrl->fw_data.firmware->size);
+	return r;
+}
+
+static ssize_t goodix_sysfs_fwsize_store(
+		struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
+	struct firmware *fw;
+	u8 **data;
+	size_t size = 0;
+
+	if (!fw_ctrl)
+		return -EINVAL;
+
+	if (sscanf(buf, "%zu", &size) < 0 || !size) {
+		ts_err("Failed to get fwsize");
+		return -EFAULT;
+	}
+
+	/* use vmalloc to alloc huge memory */
+	fw = vmalloc(sizeof(*fw) + size);
+	if (!fw)
+		return -ENOMEM;
+	mutex_lock(&fw_ctrl->mutex);
+	memset(fw, 0x00, sizeof(*fw) + size);
+	data = (u8 **)&fw->data;
+	*data = (u8 *)fw + sizeof(struct firmware);
+	fw->size = size;
+	fw_ctrl->fw_data.firmware = fw;
+	fw_ctrl->mode = UPDATE_MODE_SRC_SYSFS;
+	mutex_unlock(&fw_ctrl->mutex);
+	return count;
+}
+
 static ssize_t goodix_sysfs_fwimage_store(struct file *file,
 		struct kobject *kobj, struct bin_attribute *attr,
 		char *buf, loff_t pos, size_t count)
 {
-	struct firmware **fw = &goodix_fw_update_ctrl.fw_data.fw_sysfs;
+	struct fw_update_ctrl *fw_ctrl = &goodix_fw_update_ctrl;
+	struct firmware_data *fw_data;
 
-	if (*fw == NULL) {
-		*fw = kzalloc(sizeof(**fw), GFP_KERNEL);
-		if (*fw == NULL)
-			return -ENOMEM;
-		(*fw)->data = vmalloc(GOODIX_FW_MAX_SIEZE);
-		if ((*fw)->data == NULL) {
-			kfree(*fw);
-			*fw = NULL;
-			return -ENOMEM;
-		}
+	fw_data = &fw_ctrl->fw_data;
+
+	if (!fw_data->firmware) {
+		ts_err("Need set fw image size first");
+		return -ENOMEM;
 	}
 
-	if (pos + count > GOODIX_FW_MAX_SIEZE)
-		return -EFAULT;
-	memcpy((u8 *)&(*fw)->data[pos], buf, count);
-	(*fw)->size = pos + count;
+	if (fw_data->firmware->size == 0) {
+		ts_err("Invalid firmware size");
+		return -EINVAL;
+	}
 
+	if (pos + count > fw_data->firmware->size)
+		return -EFAULT;
+	mutex_lock(&fw_ctrl->mutex);
+	memcpy((u8 *)&fw_data->firmware->data[pos], buf, count);
+	mutex_unlock(&fw_ctrl->mutex);
 	return count;
 }
 
@@ -1107,12 +1149,14 @@ static ssize_t goodix_sysfs_result_show(
 	return r;
 }
 
-static DEVICE_ATTR(update_en, 0220, NULL, goodix_sysfs_update_en_store);
-static DEVICE_ATTR(result, 0664, goodix_sysfs_result_show, NULL);
+static DEVICE_ATTR_WO(goodix_sysfs_update_en);
+static DEVICE_ATTR_RW(goodix_sysfs_fwsize);
+static DEVICE_ATTR_RO(goodix_sysfs_result);
 
 static struct attribute *goodix_fwu_attrs[] = {
-	&dev_attr_update_en.attr,
-	&dev_attr_result.attr
+	&dev_attr_goodix_sysfs_update_en.attr,
+	&dev_attr_goodix_sysfs_fwsize.attr,
+	&dev_attr_goodix_sysfs_result.attr,
 };
 
 static int goodix_fw_sysfs_init(struct goodix_ts_core *core_data,
@@ -1140,7 +1184,7 @@ static int goodix_fw_sysfs_init(struct goodix_ts_core *core_data,
 	}
 
 	fw_ctrl->attr_fwimage.attr.name = "fwimage";
-	fw_ctrl->attr_fwimage.attr.mode = 0664;
+	fw_ctrl->attr_fwimage.attr.mode = 0666;
 	fw_ctrl->attr_fwimage.size = 0;
 	fw_ctrl->attr_fwimage.write = goodix_sysfs_fwimage_store;
 	ret = sysfs_create_bin_file(fw_ctrl->kobj, &fw_ctrl->attr_fwimage);
@@ -1218,6 +1262,7 @@ static inline void goodix_release_firmware(struct firmware_data *fw_data)
 static int goodix_fw_update_thread(void *data)
 {
 	struct fw_update_ctrl *fwu_ctrl = data;
+	struct firmware *temp_firmware = NULL;
 	ktime_t start, end;
 	int r = -EINVAL;
 
@@ -1226,27 +1271,16 @@ static int goodix_fw_update_thread(void *data)
 	fwu_ctrl->status = UPSTA_NOTWORK;
 	mutex_lock(&fwu_ctrl->mutex);
 
-	ts_debug("notify update start");
-	goodix_ts_blocking_notify(NOTIFY_FWUPDATE_START, NULL);
-
 	if (fwu_ctrl->mode & UPDATE_MODE_SRC_REQUEST) {
 		ts_info("Firmware request update starts");
 		r = goodix_request_firmware(&fwu_ctrl->fw_data,
 						fwu_ctrl->fw_name);
 		if (r < 0)
 			goto out;
+
 	} else if (fwu_ctrl->mode & UPDATE_MODE_SRC_SYSFS) {
-		if (!fwu_ctrl->fw_data.fw_sysfs) {
+		if (!fwu_ctrl->fw_data.firmware) {
 			ts_err("Invalid firmware from sysfs");
-			r = -EINVAL;
-			goto out;
-		}
-		if (fwu_ctrl->fw_data.fw_sysfs->size < 4096) {
-			ts_err("Invalid firmware size[%ld] from sysfs",
-					fwu_ctrl->fw_data.fw_sysfs->size);
-			vfree(fwu_ctrl->fw_data.fw_sysfs->data);
-			kfree(fwu_ctrl->fw_data.fw_sysfs);
-			fwu_ctrl->fw_data.fw_sysfs = NULL;
 			r = -EINVAL;
 			goto out;
 		}
@@ -1256,15 +1290,18 @@ static int goodix_fw_update_thread(void *data)
 		goto out;
 	}
 
+	ts_debug("notify update start");
+	goodix_ts_blocking_notify(NOTIFY_FWUPDATE_START, NULL);
+
 	/* ready to update */
 	ts_debug("start update proc");
 	r = goodix_fw_update_proc(fwu_ctrl);
 
 	/* clean */
-	if (fwu_ctrl->mode & UPDATE_MODE_SRC_SYSFS) {
-		vfree(fwu_ctrl->fw_data.fw_sysfs->data);
-		kfree(fwu_ctrl->fw_data.fw_sysfs);
-		fwu_ctrl->fw_data.fw_sysfs = NULL;
+	if (fwu_ctrl->mode & UPDATE_MODE_SRC_HEAD) {
+		kfree(fwu_ctrl->fw_data.firmware);
+		fwu_ctrl->fw_data.firmware = NULL;
+		temp_firmware = NULL;
 	} else if (fwu_ctrl->mode & UPDATE_MODE_SRC_REQUEST) {
 		goodix_release_firmware(&fwu_ctrl->fw_data);
 	}

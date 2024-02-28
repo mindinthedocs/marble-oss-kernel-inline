@@ -1,18 +1,20 @@
-/*
- * Goodix Gesture Module
+/* SPDX-License-Identifier: GPL-2.0
  *
- * Copyright (C) 2019 - 2020 Goodix, Inc.
+ * Goodix TouchScreen driver.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Copyright (c) 2012-2020, FocalTech Systems, Ltd., all rights reserved.
  *
- * This program is distributed in the hope that it will be a reference
- * to you, when you are integrating the GOODiX's CTP IC into your system,
+ * Copyright (C) 2022 XiaoMi, Inc.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 #ifndef _GOODIX_TS_CORE_H_
 #define _GOODIX_TS_CORE_H_
@@ -32,30 +34,26 @@
 #include <linux/completion.h>
 #include <linux/of_irq.h>
 #include <linux/pm_runtime.h>
-#include <linux/pm_qos.h>
-#if IS_ENABLED(CONFIG_OF)
+#ifdef CONFIG_OF
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
 #endif
-/*N17 code for HQ-291656 by gaoxue at 2023/5/9 start*/
 #ifdef CONFIG_FB
 #include <linux/notifier.h>
 #include <linux/fb.h>
 #endif
-/*N17 code for HQ-291656 by gaoxue at 2023/5/9 end*/
+#include "../xiaomi/xiaomi_touch.h"
 
 #define GOODIX_CORE_DRIVER_NAME			"goodix_ts"
 #define GOODIX_PEN_DRIVER_NAME			"goodix_ts,pen"
-#define GOODIX_DRIVER_VERSION			"v1.3.6"
+#define GOODIX_DRIVER_VERSION			"v1.2.2"
 #define GOODIX_MAX_TOUCH				10
 #define GOODIX_PEN_MAX_PRESSURE			4096
 #define GOODIX_MAX_PEN_KEY				2
 #define GOODIX_PEN_MAX_TILT				90
 #define GOODIX_CFG_MAX_SIZE				4096
-#define GOODIX_FW_MAX_SIEZE				(300 * 1024)
 #define GOODIX_MAX_STR_LABLE_LEN		32
 #define GOODIX_MAX_FRAMEDATA_LEN		2000
-#define GOODIX_GESTURE_DATA_LEN			16
 
 #define GOODIX_NORMAL_RESET_DELAY_MS	100
 #define GOODIX_HOLD_CPU_RESET_DELAY_MS  5
@@ -66,48 +64,28 @@
 
 #define TS_DEFAULT_FIRMWARE				"goodix_firmware.bin"
 #define TS_DEFAULT_CFG_BIN				"goodix_cfg_group.bin"
+#define GOODIX_LOCKDOWN_SIZE		8
+#define TS_LOCKDOWN_REG				0x10030
 
-#define CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI
+#define GOODIX_XIAOMI_TOUCHFEATURE
+#define GOODIX_DEBUGFS_ENABLE
+#define CONFIG_TOUCH_BOOST
 
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 start */
+#define GTP_RESULT_INVALID				0
+#define GTP_RESULT_FAIL					1
+#define GTP_RESULT_PASS					2
+
 #define PANEL_ORIENTATION_DEGREE_0	0	/* normal portrait orientation */
 #define PANEL_ORIENTATION_DEGREE_90	1	/* anticlockwise 90 degrees */
 #define PANEL_ORIENTATION_DEGREE_180	2	/* anticlockwise 180 degrees */
 #define PANEL_ORIENTATION_DEGREE_270	3	/* anticlockwise 270 degrees */
 
+#ifndef CONFIG_MACH_XIAOMI_MARBLE
+#define GOODIX_FOD_AREA_REPORT	/*support fod function*/
+#endif
+
 #define GAME_ARRAY_LEN    4
 #define GAME_ARRAY_SIZE   3
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 end */
-
-/*N17 code for HQ-291116 by gaoxue at 2023/4/24 start*/
-#define TP_INFO_MAX_LENGTH		50
-#define GOODIX_LOCKDOWN_SIZE		8
-#define TS_LOCKDOWN_REG			0x10030
-/*N17 code for HQ-291116 by gaoxue at 2023/4/24 end*/
-
-/* N17 code for HQ-291091 by jiangyue at 2023/6/2 start */
-enum GOODIX_GESTURE_TYP {
-	GESTURE_C			= (1 << 0),
-	GESTURE_E			= (1 << 1),
-	GESTURE_F			= (1 << 2),
-	GESTURE_O			= (1 << 3),
-	GESTURE_M			= (1 << 4),
-	GESTURE_W			= (1 << 5),
-	GESTURE_DOUBLE_TAP	= (1 << 7),
-	GESTURE_BA			= (1 << 8),
-	GESTURE_AB			= (1 << 9),
-	GESTURE_AA			= (1 << 10),
-	GESTURE_BB			= (1 << 11),
-	GESTURE_SINGLE_TAP	= (1 << 12),
-	GESTURE_FOD_PRESS	= (1 << 13)
-};
-/* N17 code for HQ-291091 by jiangyue at 2023/6/2 end */
-
-/*N17 code for HQ-292221 by gaoxue at 2023/4/19 start*/
-#define GTP_RESULT_INVALID				0
-#define GTP_RESULT_FAIL					1
-#define GTP_RESULT_PASS					2
-/*N17 code for HQ-292221 by gaoxue at 2023/4/19 end*/
 
 enum CORD_PROB_STA {
 	CORE_MODULE_UNPROBED = 0,
@@ -126,7 +104,6 @@ enum GOODIX_ERR_CODE {
 	GOODIX_EOTHER    = (1<<7)
 };
 
-/* MAIN-ID */
 enum IC_TYPE_ID {
 	IC_TYPE_NONE,
 	IC_TYPE_NORMANDY,
@@ -134,19 +111,8 @@ enum IC_TYPE_ID {
 	IC_TYPE_YELLOWSTONE,
 	IC_TYPE_BERLIN_A,
 	IC_TYPE_BERLIN_B,
-	IC_TYPE_BERLIN_D,
-	IC_TYPE_NOTTINGHAM
+	IC_TYPE_BERLIN_D
 };
-
-/* SUB-ID
- * sub type of berlinB serial IC.
- * for convenience we put the MAIN-ID on the hith bits,
- * hith 8 bits is MAIN-ID, low 8 bits is MIN-ID
- */
-enum BERLIN_B_SUB_ID {
-	IC_TYPE_SUB_B2 = (IC_TYPE_BERLIN_B << 8) | 0x2,
-};
-
 
 enum GOODIX_IC_CONFIG_TYPE {
 	CONFIG_TYPE_TEST = 0,
@@ -166,17 +132,11 @@ enum CHECKSUM_MODE {
 	CHECKSUM_MODE_U16_LE,
 };
 
-#define MAX_SCAN_FREQ_NUM            8
-#define MAX_SCAN_RATE_NUM            8
+#define MAX_SCAN_FREQ_NUM            10
+#define MAX_SCAN_RATE_NUM            5
 #define MAX_FREQ_NUM_STYLUS          8
 #define MAX_STYLUS_SCAN_FREQ_NUM     6
 #pragma pack(1)
-struct flash_head {
-    uint32_t checksum;
-    uint32_t address;
-    uint32_t length;
-};
-
 struct frame_head {
 	uint8_t sync;
 	uint16_t frame_index;
@@ -262,8 +222,8 @@ struct goodix_ic_info_misc { /* other data */
 	u32 touch_data_addr;
 	u16 touch_data_head_len;
 	u16 point_struct_len;
-	u16 screen_real_max_x;
-	u16 screen_real_max_y;
+	u16 panel_x;
+	u16 panel_y;
 	u32 mutual_rawdata_addr;
 	u32 mutual_diffdata_addr;
 	u32 mutual_refdata_addr;
@@ -273,7 +233,7 @@ struct goodix_ic_info_misc { /* other data */
 	u32 iq_rawdata_addr;
 	u32 iq_refdata_addr;
 	u32 im_rawdata_addr;
-	u16 im_rawdata_len;
+	u16 im_readata_len;
 	u32 noise_rawdata_addr;
 	u16 noise_rawdata_len;
 	u32 stylus_rawdata_addr;
@@ -302,118 +262,6 @@ struct goodix_ic_info {
 	struct goodix_ic_info_misc misc;
 	struct goodix_ic_info_other other;
 };
-
-// goodix_ic_info V2
-struct goodix_ic_info_sub_version {
-	u16 length;
-	u8 ic_die_id;
-	u8 ic_version_id;
-	u8 frame_data_customer_id;
-	u8 frame_data_version_id;
-	u8 touch_data_customer_id;
-	u8 touch_data_version_id;
-	u16 normalize_k_version;
-	u32 algorithm_version;
-	u32 short_test_version;
-	u32 lsp_version;
-	u32 config_id;
-	u8 config_version;
-};
-
-struct goodix_ic_info_sub_sample {
-	u16 length;
-	u16 screen_real_max_x;
-	u16 screen_real_max_y;
-	u16 screen_max_x;
-	u16 screen_max_y;
-	u8 stylus_feature;
-	union {
-		u8 freqhop_feature:1;
-		u8 calibration_feature:1;
-		u8 gesture_feature:1;
-		u8 stylus_freqhop_feature:1;
-	};
-	u8 drv_num;
-	u8 sen_num;
-	u8 button_num;
-	u8 force_num;
-	u8 active_scan_rate_num;
-	u16 active_scan_rate[MAX_SCAN_RATE_NUM];
-	u8 mutual_freq_num;
-	u16 mutual_freq[MAX_SCAN_FREQ_NUM];
-	u8 self_tx_freq_num;
-	u16 self_tx_freq[MAX_SCAN_FREQ_NUM];
-	u8 self_rx_freq_num;
-	u16 self_rx_freq[MAX_SCAN_FREQ_NUM];
-	u8 stylus_freq_num;
-	u16 stylus_freq[MAX_FREQ_NUM_STYLUS];
-	u8 stylus_tx2_freq_num;
-	u16 stylus_tx2_freq[MAX_FREQ_NUM_STYLUS];
-};
-
-struct goodix_ic_info_sub_address {
-	u16 length;
-	u32 cmd_addr;
-	u16 cmd_max_len;
-	u32 cmd_reply_addr;
-	u16 cmd_reply_len;
-	u32 fw_state_addr;
-	u8 fw_state_len;
-	u8 cmd_state_len;
-	u32 fw_buffer_addr;
-	u16 fw_buffer_max_len;
-	u32 frame_data_addr;
-	u16 frame_data_head_len;
-	u16 fw_attr_len;
-	u16 fw_log_len;
-	u8 pack_max_num;
-	u8 pack_compress_version;
-	u16 stylus_struct_len;
-	u16 mutual_struct_len;
-	u16 self_struct_len;
-	u16 noise_struct_len;
-	u16 im_struct_len;
-	u32 touch_data_addr;
-	u16 touch_data_head_len;
-	u16 point_struct_len;
-	u32 mutual_rawdata_addr;
-	u32 mutual_diffdata_addr;
-	u32 mutual_refdata_addr;
-	u32 self_rawdata_addr;
-	u32 self_diffdata_addr;
-	u32 self_refdata_addr;
-	u32 iq_rawdata_addr;
-	u32 iq_refdata_addr;
-	u32 im_rawdata_addr;
-	u16 im_rawdata_len;
-	u32 noise_rawdata_addr;
-	u16 noise_rawdata_len;
-	u32 stylus_rawdata_addr;
-	u16 stylus_rawdata_len;
-	u32 noise_data_addr;
-	u32 esd_addr;
-	u32 auto_scan_cmd_addr;
-	u32 auto_scan_info_addr;
-	u32 irrigation_data_addr;
-	u32 algo_debug_data_addr;
-	u16 algo_debug_data_len;
-	u32 update_sync_data_addr;
-};
-
-struct goodix_ic_info_sub_customer {
-	u16 length;
-	u32 customer;
-};
-
-struct goodix_ic_info_v2 {
-	u16 length;
-	u8 info_customer_id;
-	u8 info_version_id;
-	struct goodix_ic_info_sub_version version;
-	struct goodix_ic_info_sub_sample sample;
-	struct goodix_ic_info_sub_address address;
-	struct goodix_ic_info_sub_customer customer;
-};
 #pragma pack()
 
 /*
@@ -426,6 +274,12 @@ struct ts_rawdata_info {
 	int used_size; //fill in rawdata size
 	s16 buff[TS_RAWDATA_BUFF_MAX];
 	char result[TS_RAWDATA_RESULT_MAX];
+};
+
+#define FRAME_DATA_MAX_LEN	2000
+struct ts_framedata {
+	unsigned char buff[FRAME_DATA_MAX_LEN];
+	int used_size;
 };
 
 /*
@@ -472,12 +326,9 @@ struct goodix_ts_board_data {
 	unsigned int panel_max_p; /*pressure*/
 
 	bool pen_enable;
-	bool sleep_enable;
 	char fw_name[GOODIX_MAX_STR_LABLE_LEN];
 	char cfg_bin_name[GOODIX_MAX_STR_LABLE_LEN];
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 start */
 	u32 touch_expert_array[GAME_ARRAY_LEN * GAME_ARRAY_SIZE];
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 end */
 };
 
 enum goodix_fw_update_mode {
@@ -558,6 +409,10 @@ struct goodix_pen_coords {
 struct goodix_touch_data {
 	int touch_num;
 	struct goodix_ts_coords coords[GOODIX_MAX_TOUCH];
+	u8 tmp_data[32];
+	unsigned int overlay;
+	int fod_id;
+	int t_id;
 };
 
 struct goodix_ts_key {
@@ -577,17 +432,15 @@ struct goodix_pen_data {
  * @event_data: event data
  */
 struct goodix_ts_event {
+	int retry;
 	enum ts_event_type event_type;
-	u8 fp_flag;	 /* finger print DOWN flag */
 	u8 request_code; /* represent the request type */
 	u8 gesture_type;
-	u8 gesture_data[GOODIX_GESTURE_DATA_LEN];
 	struct goodix_touch_data touch_data;
 	struct goodix_pen_data pen_data;
 };
 
 enum goodix_ic_bus_type {
-	GOODIX_BUS_TYPE_NONE,
 	GOODIX_BUS_TYPE_I2C,
 	GOODIX_BUS_TYPE_SPI,
 	GOODIX_BUS_TYPE_I3C,
@@ -596,7 +449,6 @@ enum goodix_ic_bus_type {
 struct goodix_bus_interface {
 	int bus_type;
 	int ic_type;
-	int sub_ic_type;
 	struct device *dev;
 	int (*read)(struct device *dev, unsigned int addr,
 			 unsigned char *data, unsigned int len);
@@ -606,6 +458,7 @@ struct goodix_bus_interface {
 
 struct goodix_ts_hw_ops {
 	int (*power_on)(struct goodix_ts_core *cd, bool on);
+	int (*dev_confirm)(struct goodix_ts_core *cd);
 	int (*resume)(struct goodix_ts_core *cd);
 	int (*suspend)(struct goodix_ts_core *cd);
 	int (*gesture)(struct goodix_ts_core *cd, int gesture_type);
@@ -615,29 +468,20 @@ struct goodix_ts_hw_ops {
 		    unsigned char *data, unsigned int len);
 	int (*write)(struct goodix_ts_core *cd, unsigned int addr,
 		     unsigned char *data, unsigned int len);
-	int (*read_flash)(struct goodix_ts_core *cd, unsigned int addr,
-		     unsigned char *data, unsigned int len);
-	int (*send_cmd)(struct goodix_ts_core *cd,
-			struct goodix_ts_cmd *cmd);
-	int (*send_config)(struct goodix_ts_core *cd,
-			u8 *config, int len);
-	int (*read_config)(struct goodix_ts_core *cd,
-			u8 *config_data, int size);
-	int (*read_version)(struct goodix_ts_core *cd,
-			struct goodix_fw_version *version);
-	int (*get_ic_info)(struct goodix_ts_core *cd,
-			struct goodix_ic_info *ic_info);
+	int (*send_cmd)(struct goodix_ts_core *cd, struct goodix_ts_cmd *cmd);
+	int (*send_config)(struct goodix_ts_core *cd, u8 *config, int len);
+	int (*read_config)(struct goodix_ts_core *cd, u8 *config_data, int size);
+	int (*read_version)(struct goodix_ts_core *cd, struct goodix_fw_version *version);
+	int (*get_ic_info)(struct goodix_ts_core *cd, struct goodix_ic_info *ic_info);
 	int (*esd_check)(struct goodix_ts_core *cd);
-	int (*event_handler)(struct goodix_ts_core *cd,
-			struct goodix_ts_event *ts_event);
-	int (*after_event_handler)(struct goodix_ts_core *cd);
-	int (*get_capacitance_data)(struct goodix_ts_core *cd,
-			struct ts_rawdata_info *info);
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 start */
+	int (*event_handler)(struct goodix_ts_core *cd, struct goodix_ts_event *ts_event);
+	int (*after_event_handler)(struct goodix_ts_core *cd); /* clean sync flag */
+	int (*get_capacitance_data)(struct goodix_ts_core *cd, struct ts_rawdata_info *info);
+	int (*charger_on)(struct goodix_ts_core *cd, bool on);
 	int (*palm_on)(struct goodix_ts_core *cd, bool on);
 	int (*game)(struct goodix_ts_core *cd, u8 data0, u8 data1, bool on);
-	int (*charger_on)(struct goodix_ts_core *cd, bool on);
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 end */
+	int (*get_frame_data)(struct goodix_ts_core *cd, struct ts_framedata *info);
+	int (*switch_report_rate)(struct goodix_ts_core *cd, bool on);
 };
 
 /*
@@ -665,92 +509,91 @@ struct goodix_ic_config {
 	int len;
 	u8 data[GOODIX_CFG_MAX_SIZE];
 };
-
-/*N17 code for HQ-291656 by gaoxue at 2023/5/9 start*/
 enum ts_work_stat {
 	TP_NORMAL,
 	TP_GESTURE,
 	TP_SLEEP,
 };
-/*N17 code for HQ-291656 by gaoxue at 2023/5/9 end*/
-
 struct goodix_ts_core {
 	int init_stage;
 	struct platform_device *pdev;
 	struct goodix_fw_version fw_version;
 	struct goodix_ic_info ic_info;
-	struct goodix_ic_info_v2 ic_info_v2;
 	struct goodix_bus_interface *bus;
 	struct goodix_ts_board_data board_data;
 	struct goodix_ts_hw_ops *hw_ops;
 	struct input_dev *input_dev;
 	struct input_dev *pen_dev;
+	struct class *goodix_tp_class;
+	struct device *goodix_touch_dev;
 	/* TODO counld we remove this from core data? */
 	struct goodix_ts_event ts_event;
-
-	struct work_struct self_check_work;
+	unsigned long touch_id;
+	u8 eventsdata;
 
 	/* every pointer of this array represent a kind of config */
 	struct goodix_ic_config *ic_configs[GOODIX_MAX_CONFIG_GROUP];
 	struct regulator *avdd;
 	struct regulator *iovdd;
-/* N17 code for HQ-291091 by jiangyue at 2023/6/2 start */
-	u32 gesture_type;
-/* N17 code for HQ-291091 by jiangyue at 2023/6/2 end */
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pin_sta_active;
+	struct pinctrl_state *pin_sta_suspend;
+	struct pinctrl_state *pin_sta_boot;
+	struct pinctrl_state *pinctrl_state_spimode;
+	struct pinctrl_state *pinctrl_dvdd_enable;
+	struct pinctrl_state *pinctrl_dvdd_disable;
 	int power_on;
 	int irq;
 	size_t irq_trig_cnt;
-	void *notifier_cookie; // new member ok
 
 	atomic_t irq_enabled;
 	atomic_t suspended;
 	/* when this flag is true, driver should not clean the sync flag */
 	bool tools_ctrl_sync;
+	bool fod_finger;
+	bool fod_display_enabled;
 
 	struct notifier_block ts_notifier;
 	struct goodix_ts_esd ts_esd;
+	bool esd_initialized;
 
-/*N17 code for HQ-291656 by gaoxue at 2023/5/9 start*/
 #ifdef CONFIG_FB
 	struct notifier_block fb_notifier;
 #endif
-/*N17 code for HQ-291656 by gaoxue at 2023/5/9 end*/
-
-	/*N17 code for HQ-291116 by gaoxue at 2023/4/24 start*/
-	u8 lockdown_info[GOODIX_LOCKDOWN_SIZE];
-	struct proc_dir_entry *tp_lockdown_info_proc;
-	/*N17 code for HQ-291116 by gaoxue at 2023/4/24 end*/
-
-	/*N17 code for HQ-292221 by gaoxue at 2023/4/19 start*/
-	struct proc_dir_entry *tp_fw_version_proc;
-	int result_type;
-	/*N17 code for HQ-292221 by gaoxue at 2023/4/19 end*/
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 start */
-	int palm_status;
+	struct notifier_block charger_notifier;
+	struct workqueue_struct *event_wq;
+	struct workqueue_struct *gesture_wq;
 	struct workqueue_struct *game_wq;
-	struct work_struct game_work;
-/*N17 code for HQ-301563 by jiangyue at 2023/7/12 start*/
 	struct work_struct suspend_work;
 	struct work_struct resume_work;
-/*N17 code for HQ-301563 by jiangyue at 2023/7/12 end*/
-	int work_status;
-	struct class *goodix_tp_class;
-	struct device *goodix_touch_dev;
-	struct mutex core_mutex;
-	struct notifier_block charger_notifier;
 	struct work_struct charger_work;
-	int charger_status;
-/* N17 code for HQ-296762 by jiangyue at 2023/6/2 end */
-/* N17 code for HQ-290598 by jiangyue at 2023/6/6 start */
-	struct work_struct power_supply_work;
 	struct work_struct gesture_work;
-	struct workqueue_struct *gesture_wq;
-	struct workqueue_struct *event_wq;
+	struct work_struct game_work;
+	struct work_struct power_supply_work;
+	u8 lockdown_info[GOODIX_LOCKDOWN_SIZE];
+	struct proc_dir_entry *tp_lockdown_info_proc;
+	struct proc_dir_entry *tp_fw_version_proc;
+	struct proc_dir_entry *tp_selftest_proc;
+#ifdef GOODIX_DEBUGFS_ENABLE
+	struct dentry *debugfs;
+#endif
+	struct mutex report_mutex;
+	struct mutex core_mutex;
+	int work_status;
+	int gesture_enabled;
+	int double_wakeup;
+	int aod_status;
+	int fod_status;
+	int fod_icon_status;
+	int nonui_status;
+	int charger_status;
+	int palm_status;
+	int result_type;
+	int power_status;
+	int report_rate;
 	bool tp_pm_suspend;
 	struct completion pm_resume_completion;
-	int aod_status;
-/* N17 code for HQ-290598 by jiangyue at 2023/6/6 end */
-	struct delayed_work panel_notifier_register_work;
+	void *notifier_cookie;
 };
 
 /* external module structures */
@@ -822,9 +665,8 @@ struct goodix_ext_module {
  */
 struct goodix_ext_attribute {
 	struct attribute attr;
-	ssize_t (*show)(struct goodix_ext_module *module, char *buf);
-	ssize_t (*store)(struct goodix_ext_module *module,
-			const char *buf, size_t len);
+	ssize_t (*show)(struct goodix_ext_module *module, char *var);
+	ssize_t (*store)(struct goodix_ext_module *module, const char *var, size_t size);
 };
 
 /* external attrs helper macro */
@@ -841,13 +683,9 @@ static struct goodix_ext_attribute ext_attr_##_name = \
 
 /* log macro */
 extern bool debug_log_flag;
-#define ts_info(fmt, arg...) \
-		pr_info("[GTP-INF][%s] "fmt"\n", __func__, ##arg)
-#define	ts_err(fmt, arg...) \
-		pr_err("[GTP-ERR][%s] "fmt"\n", __func__, ##arg)
-#define ts_debug(fmt, arg...) \
-		{if (debug_log_flag) \
-		pr_info("[GTP-DBG][%s] "fmt"\n", __func__, ##arg);}
+#define ts_info(fmt, arg...)	pr_info("[GTP-INF][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
+#define	ts_err(fmt, arg...)		pr_err("[GTP-ERR][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
+#define ts_debug(fmt, arg...)	{if (debug_log_flag) pr_info("[GTP-DBG][%s:%d] "fmt"\n", __func__, __LINE__, ##arg); }
 
 /*
  * get board data pointer
@@ -898,24 +736,30 @@ int checksum_cmp(const u8 *data, int size, int mode);
 int is_risk_data(const u8 *data, int size);
 u32 goodix_get_file_config_id(u8 *ic_config);
 void goodix_rotate_abcd2cbad(int tx, int rx, s16 *data);
-void print_ic_info(struct goodix_ic_info *ic_info);
-/* N17 code for HQ-290598 by jiangyue at 2023/6/6 start */
 int goodix_gesture_enable(int enable);
-/* N17 code for HQ-290598 by jiangyue at 2023/6/6 end */
 
 int goodix_fw_update_init(struct goodix_ts_core *core_data);
 void goodix_fw_update_uninit(void);
 int goodix_do_fw_update(struct goodix_ic_config *ic_config, int mode);
 
-int goodix_get_ic_type(struct device_node *node, struct goodix_bus_interface *bus_inf);
+int goodix_get_ic_type(struct device_node *node);
 int gesture_module_init(void);
 void gesture_module_exit(void);
-int inspect_module_init(struct goodix_ts_core *core_data);
+#ifdef CONFIG_TOUCHSCREEN_GOODIX_BRL_DEBUG
+int inspect_module_init(void);
 void inspect_module_exit(void);
 int goodix_tools_init(void);
 void goodix_tools_exit(void);
-/*N17 code for HQ-291116 by gaoxue at 2023/4/24 start*/
+int goodix_get_rawdata(struct device *dev, struct ts_rawdata_info *info);
+#else
+static inline int inspect_module_init(void) { return 0; }
+static inline void inspect_module_exit(void) { }
+static inline int goodix_tools_init(void) { return 0; }
+static inline void goodix_tools_exit(void) { }
+static inline int goodix_get_rawdata(struct device *dev, struct ts_rawdata_info *info) { return 0; }
+#endif
+int goodix_ts_esd_init(struct goodix_ts_core *cd);
 int goodix_ts_get_lockdown_info(struct goodix_ts_core *cd);
-/*N17 code for HQ-291116 by gaoxue at 2023/4/24 end*/
+
 
 #endif
