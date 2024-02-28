@@ -182,6 +182,10 @@
 #include "wlan_osif_features.h"
 #include "wlan_hdd_coap.h"
 
+#ifdef FEATURE_WLAN_DYNAMIC_NSS
+#include "wlan_hdd_dynamic_nss.h"
+#endif
+
 #define g_mode_rates_size (12)
 #define a_mode_rates_size (8)
 
@@ -5076,12 +5080,13 @@ hdd_send_roam_scan_channel_freq_list_to_sme(struct hdd_context *hdd_ctx,
 		return QDF_STATUS_E_INVAL;
 	}
 
-	nla_for_each_nested(curr_attr, tb2[PARAM_SCAN_FREQ_LIST], rem)
+	nla_for_each_nested(curr_attr, tb2[PARAM_SCAN_FREQ_LIST], rem) {
+		if (num_chan >= SIR_MAX_SUPPORTED_CHANNEL_LIST) {
+			hdd_err("number of channels (%d) supported exceeded max (%d)",
+				num_chan, SIR_MAX_SUPPORTED_CHANNEL_LIST);
+			return QDF_STATUS_E_INVAL;
+		}
 		num_chan++;
-	if (num_chan > SIR_MAX_SUPPORTED_CHANNEL_LIST) {
-		hdd_err("number of channels (%d) supported exceeded max (%d)",
-			num_chan, SIR_MAX_SUPPORTED_CHANNEL_LIST);
-		return QDF_STATUS_E_INVAL;
 	}
 	num_chan = 0;
 
@@ -7719,6 +7724,9 @@ const struct nla_policy wlan_hdd_wifi_config_policy[
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RSN_IE] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_GTX] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ELNA_BYPASS] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_NSS_SWITCH] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_BT_ACTIVE] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_SET_NSS_ANT] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY] = {.type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY_IE_LIST] = {
 		.type = NLA_BINARY,
@@ -7750,8 +7758,6 @@ const struct nla_policy wlan_hdd_wifi_config_policy[
 							.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_FT_OVER_DS] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ARP_NS_OFFLOAD] = {.type = NLA_U8 },
-	[QCA_WLAN_VENDOR_ATTR_CONFIG_WFC_STATE] = {
-		.type = NLA_U8 },
 };
 
 static const struct nla_policy
@@ -9982,6 +9988,27 @@ static int hdd_set_nss(struct hdd_adapter *adapter,
 	return ret;
 }
 
+#ifdef FEATURE_WLAN_DYNAMIC_NSS
+static int hdd_config_enable_dynamic_nss(struct hdd_adapter *adapter,
+			       const struct nlattr *attr)
+{
+	bool enable = nla_get_u8(attr);
+	wlan_hdd_config_enable_dynamic_nss(enable);
+	if (!enable)
+		wlan_hdd_stop_dynamic_nss(adapter);
+	return 0;
+}
+
+static int hdd_config_set_bt_active(struct hdd_adapter *adapter,
+			       const struct nlattr *attr)
+{
+	bool active = nla_get_u8(attr);
+	wlan_hdd_config_set_bt_active(active);
+
+	return 0;
+}
+#endif
+
 #ifdef FEATURE_WLAN_DYNAMIC_ARP_NS_OFFLOAD
 #define DYNAMIC_ARP_NS_ENABLE    1
 #define DYNAMIC_ARP_NS_DISABLE   0
@@ -10079,37 +10106,22 @@ static int hdd_set_arp_ns_offload(struct hdd_adapter *adapter,
 #undef DYNAMIC_ARP_NS_DISABLE
 #endif
 
+
 /**
- * hdd_set_wfc_state() - Set wfc state
+ * hdd_config_set_nss_and_antenna_mode() - set the number of spatial streams supported by the adapter
+ * and set responding antenna mode.
+ *
  * @adapter: hdd adapter
  * @attr: pointer to nla attr
  *
- * Return: 0 on success, negative on failure
+ * Return: 0 on success, negative errno on failure
  */
-static int hdd_set_wfc_state(struct hdd_adapter *adapter,
-			     const struct nlattr *attr)
+static int hdd_config_set_nss_and_antenna_mode(struct hdd_adapter *adapter,
+			       const struct nlattr *attr)
 {
-	uint8_t cfg_val;
-	enum pld_wfc_mode set_val;
-	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	int errno;
-
-	errno = wlan_hdd_validate_context(hdd_ctx);
-	if (errno)
-		return errno;
-
-	cfg_val = nla_get_u8(attr);
-
-	hdd_debug_rl("set wfc state %d", cfg_val);
-	if (cfg_val == 0)
-		set_val = PLD_WFC_MODE_OFF;
-	else if (cfg_val == 1)
-		set_val = PLD_WFC_MODE_ON;
-	else
-		return -EINVAL;
-
-	return pld_set_wfc_mode(hdd_ctx->parent_dev, set_val);
-
+	uint8_t nss;
+	nss = nla_get_u8(attr);
+	return wlan_hdd_set_nss_and_antenna_mode(adapter, nss, nss);
 }
 
 /**
@@ -10226,12 +10238,18 @@ static const struct independent_setters independent_setters[] = {
 	 hdd_set_primary_interface},
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_FT_OVER_DS,
 	 hdd_set_ft_over_ds},
+#ifdef FEATURE_WLAN_DYNAMIC_NSS
+	{QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_NSS_SWITCH,
+	 hdd_config_enable_dynamic_nss},
+	{QCA_WLAN_VENDOR_ATTR_CONFIG_BT_ACTIVE,
+	 hdd_config_set_bt_active},
+#endif
+	{QCA_WLAN_VENDOR_ATTR_CONFIG_SET_NSS_ANT,
+	 hdd_config_set_nss_and_antenna_mode},
 #ifdef FEATURE_WLAN_DYNAMIC_ARP_NS_OFFLOAD
 	{QCA_WLAN_VENDOR_ATTR_CONFIG_ARP_NS_OFFLOAD,
 	 hdd_set_arp_ns_offload},
 #endif
-	{QCA_WLAN_VENDOR_ATTR_CONFIG_WFC_STATE,
-	 hdd_set_wfc_state},
 };
 
 #ifdef WLAN_FEATURE_ELNA
@@ -21171,12 +21189,18 @@ static int wlan_hdd_cfg80211_disconnect(struct wiphy *wiphy,
 {
 	int errno;
 	struct osif_vdev_sync *vdev_sync;
+        struct hdd_adapter *adapter;
 
 	errno = osif_vdev_sync_op_start(dev, &vdev_sync);
 	if (errno)
 		return errno;
 
 	errno = wlan_hdd_cm_disconnect(wiphy, dev, reason);
+
+#ifdef FEATURE_WLAN_DYNAMIC_NSS
+        adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+	wlan_hdd_stop_dynamic_nss(adapter);
+#endif
 
 	osif_vdev_sync_op_stop(vdev_sync);
 

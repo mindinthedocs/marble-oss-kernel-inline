@@ -53,7 +53,11 @@
 #ifdef MODULE
 #define WLAN_MODULE_NAME  module_name(THIS_MODULE)
 #else
+#ifdef MULTI_IF_NAME
+#define WLAN_MODULE_NAME  MULTI_IF_NAME
+#else
 #define WLAN_MODULE_NAME  "wlan"
+#endif
 #endif
 
 #define SSR_MAX_FAIL_CNT 3
@@ -688,6 +692,8 @@ static int hdd_soc_probe(struct device *dev,
 	int errno;
 
 	hdd_info("probing driver");
+
+	printk(KERN_ERR "probing wlan driver");
 
 	errno = osif_psoc_sync_create_and_trans(&psoc_sync);
 	if (errno)
@@ -1758,6 +1764,7 @@ static int wlan_hdd_pld_probe(struct device *dev,
 {
 	enum qdf_bus_type bus_type = to_bus_type(pld_bus_type);
 
+	hdd_err("wlan_hdd_pld_probe");
 	if (bus_type == QDF_BUS_TYPE_NONE) {
 		hdd_err("Invalid bus type %d->%d", pld_bus_type, bus_type);
 		return -EINVAL;

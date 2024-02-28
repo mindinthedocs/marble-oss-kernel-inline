@@ -1629,6 +1629,9 @@ struct hdd_adapter {
 #ifdef WLAN_FEATURE_DYNAMIC_MAC_ADDR_UPDATE
 	void *set_mac_addr_req_ctx;
 #endif
+#ifdef CFG_SUPPORT_SCAN_EXT_FLAG
+	uint8_t scan_ext_flag;
+#endif
 	int64_t delta_qtime;
 };
 
@@ -2089,7 +2092,6 @@ struct hdd_context {
 	/** P2P Device MAC Address for the adapter  */
 	struct qdf_mac_addr p2p_device_address;
 
-	qdf_wake_lock_t rx_wake_lock;
 	qdf_wake_lock_t sap_wake_lock;
 
 	/* Flag keeps track of wiphy suspend/resume */

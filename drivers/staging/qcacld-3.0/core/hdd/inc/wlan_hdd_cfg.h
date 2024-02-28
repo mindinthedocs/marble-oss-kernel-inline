@@ -49,6 +49,8 @@ struct hdd_context;
 #define FW_MODULE_LOG_LEVEL_STRING_LENGTH  (512)
 #define TX_SCHED_WRR_PARAMS_NUM            (5)
 
+#define CFG_SUPPORT_SCAN_EXT_FLAG 1
+
 /* Defines for all of the things we read from the configuration (registry). */
 
 #ifdef CONFIG_DP_TRACE
@@ -212,7 +214,6 @@ struct hdd_config {
 	uint32_t rx_thread_affinity_mask;
 	uint8_t cpu_map_list[CFG_DP_RPS_RX_QUEUE_CPU_MAP_LIST_LEN];
 	bool multicast_replay_filter;
-	uint32_t rx_wakelock_timeout;
 	uint8_t num_dp_rx_threads;
 #ifdef CONFIG_DP_TRACE
 	bool enable_dp_trace;

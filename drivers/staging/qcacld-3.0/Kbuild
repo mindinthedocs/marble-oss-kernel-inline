@@ -6,9 +6,6 @@ else
 	KERNEL_BUILD := n
 endif
 
-# Force user build
-TARGET_BUILD_VARIANT := user
-
 ifeq ($(KERNEL_BUILD), y)
 	# These are provided in external module based builds
 	# Need to explicitly define for Kernel-based builds
@@ -51,33 +48,15 @@ endif
 
 include $(WLAN_ROOT)/configs/$(patsubst "%",%,$(CONFIG_QCA_CLD_WLAN_PROFILE))_defconfig
 
+# set DEVNAME, MODNAME
+ifneq ($(DEVNAME),)
+	MODNAME := $(DEVNAME)
+endif
+
 # add configurations in WLAN_CFG_OVERRIDE
 $(foreach cfg, $(WLAN_CFG_OVERRIDE), \
 	$(eval $(cfg)) \
 	$(warning "Overriding WLAN config with: $(cfg)"))
-
-# KERNEL_SUPPORTS_NESTED_COMPOSITES := y is used to enable nested
-# composite support. The nested composite support is available in some
-# MSM kernels, and is available in all GKI kernels beginning with
-# 5.10.20, but unfortunately is not available in any upstream kernel.
-#
-# When the feature is present in an MSM kernel, the flag is explicitly
-# set in the kernel sources.  When a GKI kernel is used, there isn't a
-# flag set in the sources, so set the flag here if we are building
-# with GKI kernel 5.10.20 or greater
-KERNEL_VERSION = $(shell echo $$(( ( $1 << 16 ) + ( $2 << 8 ) + $3 )))
-LINUX_CODE := $(call KERNEL_VERSION,$(VERSION),$(PATCHLEVEL),$(SUBLEVEL))
-COMPOSITE_CODE := 330260 # hardcoded $(call KERNEL_VERSION,5,10,20)
-ifeq ($(KERNEL_SUPPORTS_NESTED_COMPOSITES),)
-  #flag is not explicitly present
-  ifneq ($(findstring gki,$(CONFIG_LOCALVERSION))$(findstring qki,$(CONFIG_LOCALVERSION)),)
-    # GKI kernel
-    ifeq ($(shell test $(LINUX_CODE) -ge $(COMPOSITE_CODE); echo $$?),0)
-      # version >= 5.10.20
-      KERNEL_SUPPORTS_NESTED_COMPOSITES := y
-    endif
-  endif
-endif
 
 OBJS :=
 OBJS_DIRS :=
@@ -88,13 +67,7 @@ endef
 
 define _add-wlan-objs
   ifneq ($(2),)
-    ifeq ($(KERNEL_SUPPORTS_NESTED_COMPOSITES),y)
-      OBJS_DIRS += $(dir $(2))
-      OBJS += $(1).o
-      $(1)-y := $(2)
-    else
-      OBJS += $(2)
-    endif
+    OBJS += $(2)
   endif
 endef
 
@@ -135,7 +108,8 @@ HDD_OBJS := 	$(HDD_SRC_DIR)/wlan_hdd_assoc.o \
 		$(HDD_SRC_DIR)/wlan_hdd_trace.o \
 		$(HDD_SRC_DIR)/wlan_hdd_tx_rx.o \
 		$(HDD_SRC_DIR)/wlan_hdd_wmm.o \
-		$(HDD_SRC_DIR)/wlan_hdd_wowl.o\
+		$(HDD_SRC_DIR)/wlan_hdd_wowl.o \
+		$(HDD_SRC_DIR)/wlan_hdd_dynamic_nss.o
 
 ifeq ($(CONFIG_WLAN_FEATURE_PERIODIC_STA_STATS), y)
 HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_periodic_sta_stats.o
@@ -845,8 +819,10 @@ WLAN_LOGGING_INC_DIR :=	$(WLAN_LOGGING_DIR)/inc
 WLAN_LOGGING_SRC_DIR :=	$(WLAN_LOGGING_DIR)/src
 
 WLAN_LOGGING_INC     := -I$(WLAN_ROOT)/$(WLAN_LOGGING_INC_DIR)
+ifeq ($(BUILD_DEBUG_VERSION), 1)
 WLAN_LOGGING_OBJS    := $(WLAN_LOGGING_SRC_DIR)/wlan_logging_sock_svc.o \
 		$(WLAN_LOGGING_SRC_DIR)/wlan_roam_debug.o
+endif
 
 $(call add-wlan-objs,wlan_logging,$(WLAN_LOGGING_OBJS))
 
@@ -3032,10 +3008,10 @@ INCS +=		$(COAP_DISPATCHER_INC)
 INCS +=		$(COAP_CORE_INC)
 INCS +=		$(COAP_WMI_INC)
 
-ccflags-y += $(INCS)
+ccflags-y += $(INCS) \
+		-Wno-unused-variable -Wno-unused-function
 
-cppflags-y +=	-Wall\
-		-Werror
+cppflags-y +=	-Wall
 
 cppflags-$(CONFIG_THERMAL_STATS_SUPPORT) += -DTHERMAL_STATS_SUPPORT
 cppflags-$(CONFIG_PTT_SOCK_SVC_ENABLE) += -DPTT_SOCK_SVC_ENABLE
@@ -3903,6 +3879,7 @@ cppflags-$(CONFIG_WLAN_HANG_EVENT) += -DDP_SUPPORT_RECOVERY_NOTIFY
 #endof dummy flags
 
 ccflags-$(CONFIG_ENABLE_SIZE_OPTIMIZE) += -Os
+ccflags-$(CONFIG_DISABLE_DEBUG_INFO) += -g0
 
 # DFS component
 cppflags-$(CONFIG_WLAN_DFS_STATIC_MEM_ALLOC) += -DWLAN_DFS_STATIC_MEM_ALLOC
@@ -3970,6 +3947,10 @@ cppflags-$(CONFIG_SAP_AVOID_ACS_FREQ_LIST) += -DSAP_AVOID_ACS_FREQ_LIST
 
 #Flag to enable Dynamic Voltage WDCVS (Config Voltage Mode)
 cppflags-$(CONFIG_WLAN_DYNAMIC_CVM) += -DFEATURE_WLAN_DYNAMIC_CVM
+
+ifneq ($(FACTORY_BUILD),1)
+cppflags-y += -DFEATURE_WLAN_DYNAMIC_NSS
+endif
 
 #Flag to enable get firmware state feature
 cppflags-$(CONFIG_QCACLD_FEATURE_FW_STATE) += -DFEATURE_FW_STATE
@@ -4417,9 +4398,10 @@ else
 endif
 
 # Android wifi state control interface
-ifneq ($(WLAN_CTRL_NAME),)
-ccflags-y += -DWLAN_CTRL_NAME=\"$(WLAN_CTRL_NAME)\"
+ifeq ($(WLAN_CTRL_NAME),)
+	WLAN_CTRL_NAME=wlan
 endif
+ccflags-y += -DWLAN_CTRL_NAME=\"$(WLAN_CTRL_NAME)\"
 
 # inject some build related information
 ifeq ($(CONFIG_BUILD_TAG), y)
