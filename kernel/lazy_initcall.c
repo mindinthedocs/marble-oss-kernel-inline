@@ -40,27 +40,75 @@ static bool completed;
  * You can also use this as an ignorelist.
  */
 static const __initconst char * const blacklist[] = {
-	// Custom load order
-	"hdcp",
-
-	// Disabled
-	"f_fs_ipc_log",
-	"mem_offline",
-	"msm_show_resume_irq",
-	"phy_qcom_ufs_qmp_v4_anarok",
-	"phy_qcom_ufs_qmp_v4_diwali",
-	"phy_qcom_ufs_qmp_v4_lahaina",
-	"phy_qcom_ufs_qmp_v4_parrot",
-	"phy_qcom_ufs_qmp_v4_waipio",
-	"qca6490",
-	"qcom_ipc_logging",
-	"qcom_logbuf_vendor_hooks",
-	"rimps_log",
-	"wcd937x_dlkm",
-	"wcd937x_slave_dlkm",
-
-	// Renamed
-	"hdcp_qseecom",
+        //built-in
+		//disabled
+		"mtd",
+		"mtdoops",
+		"qti_amoled_ecm",
+		"mtd_blkdevs",
+		"chipreg",
+		"mtdblock",
+		"qca6490",
+		"block2mtd",
+		"ofpart",
+		"fpc1540",
+		
+		// "adsp_loader_dlkm",
+// "audio_pkt_dlkm",
+// "audio_prm_dlkm",
+// "audpkt_ion_dlkm",
+// "aw882xx_dlkm",
+// "camera",
+// "goodix_core",
+// "goodix_health",
+// "gpr_dlkm",
+// "gsim",
+// "hdmi_dlkm",
+// "ipa_clientsm",
+// "ipam",
+// "ipanetm",
+// "llcc_perfmon",
+// "lpass_cdc_dlkm",
+// "lpass_cdc_rx_macro_dlkm",
+// "lpass_cdc_tx_macro_dlkm",
+// "lpass_cdc_va_macro_dlkm",
+// "lpass_cdc_wsa2_macro_dlkm",
+// "lpass_cdc_wsa_macro_dlkm",
+// "machine_dlkm",
+// "mbhc_dlkm",
+// "mi_cnss_statistic",
+// "msm-cvp",
+// "msm-eva",
+// "msm_video",
+// "pinctrl_lpi_dlkm",
+// "q6_dlkm",
+// "q6_notifier_dlkm",
+// "q6_pdr_dlkm",
+// "qca6490",
+// "rmnet_aps",
+// "rmnet_core",
+// "rmnet_ctl",
+// "rmnet_offload",
+// "rmnet_perf",
+// "rmnet_perf_tether",
+// "rmnet_sch",
+// "rmnet_shs",
+// "rmnet_wlan",
+// "rndisipam",
+// "snd_event_dlkm",
+// "spf_core_dlkm",
+// "stub_dlkm",
+// "swr_ctrl_dlkm",
+// "swr_dlkm",
+// "swr_dmic_dlkm",
+// "swr_haptics_dlkm",
+// "wcd937x_dlkm",
+// "wcd937x_slave_dlkm",
+// "wcd938x_dlkm",
+// "wcd938x_slave_dlkm",
+// "wcd9xxx_dlkm",
+// "wcd_core_dlkm",
+// "wsa883x_dlkm",
 
 	NULL
 };
@@ -219,8 +267,7 @@ static int __init integrated_module_param_cb(char *param, char *val,
 	return 0;
 }
 
-static noinline void __init load_modname(const char * const modname, const char __user *uargs,
-					 enum lazy_initcall_type type)
+static noinline void __init load_modname(const char * const modname, const char __user *uargs)
 {
 	int i, ret;
 	bool match = false;
@@ -245,15 +292,10 @@ static noinline void __init load_modname(const char * const modname, const char 
 				pr_debug("lazy_initcalls[%d]: %s already loaded\n", i, modname);
 				return;
 			}
+			lazy_initcalls[i].loaded = true;
 			match = true;
 			break;
 		}
-	}
-
-	// Check if the driver is deferred
-	if (lazy_initcalls[i].type != type) {
-		pr_info("deferring \"%s\"\n", modname);
-		return;
 	}
 
 	// Unable to find the driver that the userspace requested
@@ -306,8 +348,6 @@ static noinline void __init load_modname(const char * const modname, const char 
 	if (ret != 0)
 		__err("lazy_initcalls[%d]: %s's init function returned %d\n", i, modname, ret);
 
-	lazy_initcalls[i].loaded = true;
-
 	// Check if all modules are loaded so that __init memory can be released
 	match = false;
 	for (i = 0; i < counter; i++) {
@@ -350,7 +390,7 @@ static noinline int __init __load_module(struct load_info *info, const char __us
 	if (err)
 		goto err;
 
-	load_modname(info->name, uargs, NORMAL);
+	load_modname(info->name, uargs);
 
 err:
 	return err;
@@ -376,7 +416,7 @@ static int __ref load_module(struct load_info *info, const char __user *uargs,
 			pr_info("all userspace modules loaded, now loading built-in deferred drivers\n");
 
 			for (i = 0; deferred_list[i]; i++)
-				load_modname(deferred_list[i], NULL, DEFERRED);
+				load_modname(deferred_list[i], NULL);
 		}
 		pr_info("all modules loaded, calling free_initmem()\n");
 		if (show_errors_str())
