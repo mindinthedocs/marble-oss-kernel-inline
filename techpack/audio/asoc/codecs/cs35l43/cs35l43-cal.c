@@ -13,7 +13,7 @@
  *
  */
 
-#define DEBUG
+
 
 #define DEFAULT_CALR    9790//7*8192/5.85714
 

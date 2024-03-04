@@ -12,7 +12,7 @@
  * published by the Free Software Foundation.
  *
  */
-#define DEBUG
+
 
 
 #include <linux/module.h>
