@@ -441,7 +441,7 @@ HOSTCXX	= ccache g++
 endif
 
 KBUILD_USERHOSTCFLAGS := -Wall -Wmissing-prototypes -Wstrict-prototypes \
-			 -O2 -fomit-frame-pointer -std=gnu89
+			 -O3 -fomit-frame-pointer -std=gnu89 -Wno-unknown-warning-option
 KBUILD_USERCFLAGS  := $(KBUILD_USERHOSTCFLAGS) $(USERCFLAGS)
 KBUILD_USERLDFLAGS := $(USERLDFLAGS)
 
@@ -524,7 +524,7 @@ KBUILD_AFLAGS   := -D__ASSEMBLY__ -fno-PIE
 KBUILD_CFLAGS   :=-Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common -fshort-wchar -fno-PIE \
 		   -Wimplicit-function-declaration -Wimplicit-int \
-		   -Wreturn-type -Wno-format-security \
+		   -Wreturn-type -Wno-format-security -Wno-unknown-warning-option \
 		   -std=gnu89
 KBUILD_CPPFLAGS := -D__KERNEL__
 KBUILD_AFLAGS_KERNEL :=
@@ -781,6 +781,7 @@ else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS += -Os
 endif
 
+
 ifdef CONFIG_LLVM_POLLY
 KBUILD_CFLAGS	+= -mllvm -polly \
 		   -mllvm -polly-run-inliner \
@@ -992,8 +993,7 @@ else
 CC_FLAGS_LTO	+= -fvisibility=default
 endif
 
-# Limit inlining across translation units to reduce binary size
-KBUILD_LDFLAGS += -mllvm -import-instr-limit=5
+
 endif
 
 ifdef CONFIG_LTO

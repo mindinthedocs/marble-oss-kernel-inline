@@ -487,7 +487,6 @@ int qcom_icc_rpmh_probe(struct platform_device *pdev)
 	provider->set = qcom_icc_set;
 	provider->aggregate = qcom_icc_aggregate;
 
-	qcom_icc_debug_register(provider);
 
 	mutex_lock(&probe_list_lock);
 	list_add_tail(&qp->probe_list, &qnoc_probe_list);
@@ -515,7 +514,6 @@ int qcom_icc_rpmh_remove(struct platform_device *pdev)
 	struct icc_provider *provider = &qp->provider;
 	struct icc_node *n;
 
-	qcom_icc_debug_unregister(provider);
 
 	list_for_each_entry(n, &provider->nodes, node_list) {
 		icc_node_del(n);
