@@ -182,7 +182,7 @@ if TRACING_SUPPORT
 
 menuconfig FTRACE
 	bool "Tracers"
-	default y
+	default y if DEBUG_KERNEL
 	help
 	  Enable the kernel tracing infrastructure.
 
