@@ -202,7 +202,6 @@ static void sde_encoder_phys_cmd_pp_tx_done_irq(void *arg, int irq_idx)
 	struct sde_encoder_phys_cmd *cmd_enc;
 	struct sde_hw_ctl *ctl;
 	u32 scheduler_status = INVALID_CTL_STATUS, event = 0;
-	struct sde_hw_pp_vsync_info info[MAX_CHANNELS_PER_ENC] = {{0}};
 
 	if (!phys_enc || !phys_enc->hw_pp || !phys_enc->hw_ctl)
 		return;
@@ -227,14 +226,6 @@ static void sde_encoder_phys_cmd_pp_tx_done_irq(void *arg, int irq_idx)
 
 	if (ctl->ops.get_scheduler_status)
 		scheduler_status = ctl->ops.get_scheduler_status(ctl);
-
-	sde_encoder_helper_get_pp_line_count(phys_enc->parent, info);
-	SDE_EVT32_IRQ(DRMID(phys_enc->parent), ctl->idx - CTL_0,
-		phys_enc->hw_pp->idx - PINGPONG_0, event, scheduler_status,
-		info[0].pp_idx, info[0].intf_idx, info[0].intf_frame_count,
-		info[0].wr_ptr_line_count, info[0].rd_ptr_line_count,
-		info[1].pp_idx, info[1].intf_idx, info[1].intf_frame_count,
-		info[1].wr_ptr_line_count, info[1].rd_ptr_line_count);
 
 	/* Signal any waiting atomic commit thread */
 	wake_up_all(&phys_enc->pending_kickoff_wq);
@@ -272,7 +263,6 @@ static void sde_encoder_phys_cmd_te_rd_ptr_irq(void *arg, int irq_idx)
 	struct sde_encoder_phys_cmd *cmd_enc;
 	u32 scheduler_status = INVALID_CTL_STATUS;
 	struct sde_hw_ctl *ctl;
-	struct sde_hw_pp_vsync_info info[MAX_CHANNELS_PER_ENC] = {{0}};
 	struct sde_encoder_phys_cmd_te_timestamp *te_timestamp;
 	unsigned long lock_flags;
 
@@ -298,14 +288,6 @@ static void sde_encoder_phys_cmd_te_rd_ptr_irq(void *arg, int irq_idx)
 	}
 	spin_unlock_irqrestore(phys_enc->enc_spinlock, lock_flags);
 
-	sde_encoder_helper_get_pp_line_count(phys_enc->parent, info, WRITE);
-	SDE_EVT32_IRQ(DRMID(phys_enc->parent),
-		info[0].pp_idx, info[0].intf_idx,
-		info[0].wr_ptr_line_count, info[0].intf_frame_count, info[0].rd_ptr_line_count,
-		info[1].pp_idx, info[1].intf_idx,
-		info[1].wr_ptr_line_count, info[1].intf_frame_count, info[1].rd_ptr_line_count,
-		scheduler_status);
-
 	if (phys_enc->parent_ops.handle_vblank_virt)
 		phys_enc->parent_ops.handle_vblank_virt(phys_enc->parent,
 			phys_enc);
@@ -320,7 +302,6 @@ static void sde_encoder_phys_cmd_wr_ptr_irq(void *arg, int irq_idx)
 	struct sde_encoder_phys *phys_enc = arg;
 	struct sde_hw_ctl *ctl;
 	u32 event = 0, qsync_mode = 0;
-	struct sde_hw_pp_vsync_info info[MAX_CHANNELS_PER_ENC] = {{0}};
 	struct sde_encoder_phys_cmd *cmd_enc;
 
 	if (!phys_enc || !phys_enc->hw_ctl)
@@ -340,12 +321,6 @@ static void sde_encoder_phys_cmd_wr_ptr_irq(void *arg, int irq_idx)
 			spin_unlock(phys_enc->enc_spinlock);
 		}
 	}
-
-	sde_encoder_helper_get_pp_line_count(phys_enc->parent, info, WRITE);
-	SDE_EVT32_IRQ(DRMID(phys_enc->parent),
-		ctl->idx - CTL_0, event,
-		info[0].pp_idx, info[0].intf_idx, info[0].wr_ptr_line_count,
-		info[1].pp_idx, info[1].intf_idx, info[1].wr_ptr_line_count, qsync_mode);
 
 	if (qsync_mode)
 		sde_encoder_override_tearcheck_rd_ptr(phys_enc);
@@ -1908,7 +1883,6 @@ static void sde_encoder_phys_cmd_trigger_start(
 	struct sde_encoder_phys_cmd *cmd_enc =
 			to_sde_encoder_phys_cmd(phys_enc);
 	u32 frame_cnt;
-	struct sde_hw_pp_vsync_info info[MAX_CHANNELS_PER_ENC] = {{0}};
 
 	if (!phys_enc)
 		return;
@@ -1921,13 +1895,6 @@ static void sde_encoder_phys_cmd_trigger_start(
 	} else {
 		sde_encoder_helper_trigger_start(phys_enc);
 	}
-
-	sde_encoder_helper_get_pp_line_count(phys_enc->parent, info);
-	SDE_EVT32(DRMID(phys_enc->parent), frame_cnt, info[0].pp_idx,
-		info[0].intf_idx, info[0].intf_frame_count,
-		info[0].wr_ptr_line_count, info[0].rd_ptr_line_count,
-		info[1].pp_idx, info[1].intf_idx, info[1].intf_frame_count,
-		info[1].wr_ptr_line_count, info[1].rd_ptr_line_count);
 
 	/* wr_ptr_wait_success is set true when wr_ptr arrives */
 	cmd_enc->wr_ptr_wait_success = false;
