@@ -109,6 +109,13 @@ static const __initconst char * const blacklist[] = {
 		"spmi_glink_debug",
 		"qti_battery_debug",
 		"coresight_tmc",
+        "usb_f_diag",
+        "usb_f_ccid",
+        "usb_f_cdev",
+        "usb_f_qdss",
+        "usb_f_gsi",
+        "cs35l41_dlkm",
+        "cs35l43_dlkm",
 	NULL
 };
 
