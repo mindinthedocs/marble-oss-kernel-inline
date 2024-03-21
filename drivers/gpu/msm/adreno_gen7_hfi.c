@@ -107,7 +107,6 @@ int gen7_hfi_queue_write(struct adreno_device *adreno_dev, u32 queue_idx,
 	u32 i, write_idx, read_idx, empty_space;
 	u32 size_dwords = size_bytes >> 2;
 	u32 align_size = ALIGN(size_dwords, SZ_4);
-	u32 id = MSG_HDR_GET_ID(*msg);
 
 	if (hdr->status == HFI_QUEUE_STATUS_DISABLED || !IS_ALIGNED(size_bytes, sizeof(u32)))
 		return -EINVAL;
@@ -134,8 +133,6 @@ int gen7_hfi_queue_write(struct adreno_device *adreno_dev, u32 queue_idx,
 		queue[write_idx] = 0xfafafafa;
 		write_idx = (write_idx + 1) % hdr->queue_size;
 	}
-
-	trace_kgsl_hfi_send(id, size_dwords, MSG_HDR_GET_SEQNUM(*msg));
 
 	hfi_update_write_idx(&hdr->write_index, write_idx);
 

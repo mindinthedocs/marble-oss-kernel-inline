@@ -144,43 +144,6 @@ static void gen7_receive_ack_async(struct adreno_device *adreno_dev, void *rcvd)
 			MSG_HDR_GET_SEQNUM(waiters[i]));
 }
 
-static void log_profiling_info(struct adreno_device *adreno_dev, u32 *rcvd)
-{
-	struct hfi_ts_retire_cmd *cmd = (struct hfi_ts_retire_cmd *)rcvd;
-	struct kgsl_context *context;
-	struct retire_info info = {0};
-	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
-	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
-
-	context = kgsl_context_get(device, cmd->ctxt_id);
-	if (context == NULL)
-		return;
-
-	info.timestamp = cmd->ts;
-	info.rb_id = adreno_get_level(context);
-	info.gmu_dispatch_queue = context->gmu_dispatch_queue;
-	info.submitted_to_rb = cmd->submitted_to_rb;
-	info.sop = cmd->sop;
-	info.eop = cmd->eop;
-	if (GMU_VER_MINOR(gmu->ver.hfi) < 4)
-		info.active = cmd->eop - cmd->sop;
-	else
-		info.active = cmd->active;
-	info.retired_on_gmu = cmd->retired_on_gmu;
-
-	/* protected GPU work must not be reported */
-	if  (!(context->flags & KGSL_CONTEXT_SECURE))
-		kgsl_work_period_update(device, context->proc_priv->period,
-					     info.active);
-
-	trace_adreno_cmdbatch_retired(context, &info, 0, 0, 0);
-
-	log_kgsl_cmdbatch_retired_event(context->id, cmd->ts,
-		context->priority, 0, cmd->sop, cmd->eop);
-
-	kgsl_context_put(context);
-}
-
 u32 gen7_hwsched_parse_payload(struct payload_section *payload, u32 key)
 {
 	u32 i;
@@ -606,7 +569,6 @@ static void gen7_hwsched_process_msgq(struct adreno_device *adreno_dev)
 		if (MSG_HDR_GET_TYPE(rcvd[0]) == HFI_MSG_ACK) {
 			gen7_receive_ack_async(adreno_dev, rcvd);
 		} else if (MSG_HDR_GET_ID(rcvd[0]) == F2H_MSG_TS_RETIRE) {
-			log_profiling_info(adreno_dev, rcvd);
 			adreno_hwsched_trigger(adreno_dev);
 		}
 	}
@@ -1658,68 +1620,6 @@ void gen7_hwsched_hfi_remove(struct adreno_device *adreno_dev)
 		kthread_stop(hw_hfi->f2h_task);
 }
 
-static void gen7_add_profile_events(struct adreno_device *adreno_dev,
-	struct kgsl_drawobj_cmd *cmdobj, struct adreno_submit_time *time)
-{
-	unsigned long flags;
-	u64 time_in_s;
-	unsigned long time_in_ns;
-	struct kgsl_drawobj *drawobj = DRAWOBJ(cmdobj);
-	struct kgsl_context *context = drawobj->context;
-	struct submission_info info = {0};
-	struct adreno_hwsched *hwsched = &adreno_dev->hwsched;
-
-	if (!time)
-		return;
-
-	/*
-	 * Here we are attempting to create a mapping between the
-	 * GPU time domain (alwayson counter) and the CPU time domain
-	 * (local_clock) by sampling both values as close together as
-	 * possible. This is useful for many types of debugging and
-	 * profiling. In order to make this mapping as accurate as
-	 * possible, we must turn off interrupts to avoid running
-	 * interrupt handlers between the two samples.
-	 */
-
-	local_irq_save(flags);
-
-	/* Read always on registers */
-	time->ticks = gen7_read_alwayson(adreno_dev);
-
-	/* Trace the GPU time to create a mapping to ftrace time */
-	trace_adreno_cmdbatch_sync(context->id, context->priority,
-		drawobj->timestamp, time->ticks);
-
-	/* Get the kernel clock for time since boot */
-	time->ktime = local_clock();
-
-	/* Get the timeofday for the wall time (for the user) */
-	ktime_get_real_ts64(&time->utime);
-
-	local_irq_restore(flags);
-
-	/* Return kernel clock time to the client if requested */
-	time_in_s = time->ktime;
-	time_in_ns = do_div(time_in_s, 1000000000);
-
-	info.inflight = hwsched->inflight;
-	info.rb_id = adreno_get_level(context);
-	info.gmu_dispatch_queue = context->gmu_dispatch_queue;
-
-	cmdobj->submit_ticks = time->ticks;
-
-	msm_perf_events_update(MSM_PERF_GFX, MSM_PERF_SUBMIT,
-		pid_nr(context->proc_priv->pid),
-		context->id, drawobj->timestamp,
-		!!(drawobj->flags & KGSL_DRAWOBJ_END_OF_FRAME));
-	trace_adreno_cmdbatch_submitted(drawobj, &info, time->ticks,
-		(unsigned long) time_in_s, time_in_ns / 1000, 0);
-
-	log_kgsl_cmdbatch_submitted_event(context->id, drawobj->timestamp,
-			context->priority, drawobj->flags);
-}
-
 static void init_gmu_context_queue(struct adreno_context *drawctxt)
 {
 	struct kgsl_memdesc *md = &drawctxt->gmu_context_queue;
@@ -1936,7 +1836,6 @@ int gen7_gmu_context_queue_write(struct adreno_device *adreno_dev,
 	u32 i, empty_space, write_idx = hdr->write_index, read_idx = hdr->read_index;
 	u32 size_dwords = size_bytes >> 2;
 	u32 align_size = ALIGN(size_dwords, SZ_4);
-	u32 id = MSG_HDR_GET_ID(*msg);
 	struct kgsl_drawobj_cmd *cmdobj = NULL;
 
 	empty_space = (write_idx >= read_idx) ?
@@ -1966,17 +1865,10 @@ int gen7_gmu_context_queue_write(struct adreno_device *adreno_dev,
 	if (!drawobj)
 		goto done;
 
-	if (drawobj->type & SYNCOBJ_TYPE) {
-		struct kgsl_drawobj_sync *syncobj = SYNCOBJ(drawobj);
-
-		trace_adreno_syncobj_submitted(drawobj->context->id, drawobj->timestamp,
-			syncobj->numsyncs, gen7_read_alwayson(adreno_dev));
+	if (drawobj->type & SYNCOBJ_TYPE)
 		goto done;
-	}
 
 	cmdobj = CMDOBJ(drawobj);
-
-	gen7_add_profile_events(adreno_dev, cmdobj, time);
 
 	/*
 	 * Put the profiling information in the user profiling buffer.
@@ -2103,9 +1995,6 @@ static int _submit_hw_fence(struct adreno_device *adreno_dev,
 				obj->ctxt_id = fences[j]->context;
 				obj->seq_no =  fences[j]->seqno;
 			}
-			trace_adreno_input_hw_fence(drawobj->context->id, obj->ctxt_id,
-				obj->seq_no, obj->flags, fences[j]->ops->get_timeline_name ?
-				fences[j]->ops->get_timeline_name(fences[j]) : "unknown");
 
 			obj++;
 		}
@@ -2295,7 +2184,6 @@ static int gen7_hfi_dispatch_queue_write(struct adreno_device *adreno_dev, u32 q
 	u32 i, write, empty_space;
 	u32 size_dwords = size_bytes >> 2;
 	u32 align_size = ALIGN(size_dwords, SZ_4);
-	u32 id = MSG_HDR_GET_ID(*msg);
 
 	if (hdr->status == HFI_QUEUE_STATUS_DISABLED || !IS_ALIGNED(size_bytes, sizeof(u32)))
 		return -EINVAL;
@@ -2327,8 +2215,6 @@ static int gen7_hfi_dispatch_queue_write(struct adreno_device *adreno_dev, u32 q
 
 	if (!cmdobj)
 		goto done;
-
-	gen7_add_profile_events(adreno_dev, cmdobj, time);
 
 	/*
 	 * Put the profiling information in the user profiling buffer.

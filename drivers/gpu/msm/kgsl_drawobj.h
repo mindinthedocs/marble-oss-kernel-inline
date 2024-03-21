@@ -67,8 +67,6 @@ struct kgsl_drawobj {
  * for easy access
  * @profile_index: Index to store the start/stop ticks in the kernel profiling
  * buffer
- * @submit_ticks: Variable to hold ticks at the time of
- *     command obj submit.
 
  */
 struct kgsl_drawobj_cmd {
@@ -83,7 +81,6 @@ struct kgsl_drawobj_cmd {
 	struct kgsl_mem_entry *profiling_buf_entry;
 	uint64_t profiling_buffer_gpuaddr;
 	unsigned int profile_index;
-	uint64_t submit_ticks;
 	/* @numibs: Number of ibs in this cmdobj */
 	u32 numibs;
 	/* @requeue_cnt: Number of times cmdobj was requeued before submission to dq succeeded */
@@ -160,17 +157,6 @@ TIMELINEOBJ(struct kgsl_drawobj *obj)
 {
 	return container_of(obj, struct kgsl_drawobj_timeline, base);
 }
-
-#define KGSL_FENCE_NAME_LEN 74
-
-struct fence_info {
-	char name[KGSL_FENCE_NAME_LEN];
-};
-
-struct event_fence_info {
-	struct fence_info *fences;
-	int num_fences;
-};
 
 struct event_timeline_info {
 	u64 seqno;
