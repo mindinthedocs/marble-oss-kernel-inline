@@ -7,6 +7,9 @@
 #include <walt.h>
 #include "trace.h"
 
+extern int select_fallback_rq(int cpu, struct task_struct *p);
+extern struct task_struct *__pick_migrate_task(struct rq *rq);
+
 #ifdef CONFIG_HOTPLUG_CPU
 
 /* if a cpu is halting */
@@ -103,7 +106,7 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf, bool force)
 		if (rq->nr_running == 1)
 			break;
 
-		next = pick_migrate_task(rq);
+		next = __pick_migrate_task(rq);
 
 		/*
 		 * Argh ... no iterator for tasks, we need to remove the
@@ -176,7 +179,7 @@ static int drain_rq_cpu_stop(void *data)
 	return 0;
 }
 
-static int sched_cpu_drain_rq(unsigned int cpu)
+static int sched_cpu_drain_rq_walt(unsigned int cpu)
 {
 	if (available_idle_cpu(cpu))
 		return 0;
@@ -205,7 +208,7 @@ static int halt_cpus(struct cpumask *cpus)
 		/* only drain online cpus */
 		if (cpu_online(cpu)) {
 			/* drain the online CPU */
-			ret = sched_cpu_drain_rq(cpu);
+			ret = sched_cpu_drain_rq_walt(cpu);
 		}
 
 		if (ret < 0) {

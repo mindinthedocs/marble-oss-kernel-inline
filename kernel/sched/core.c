@@ -1878,7 +1878,7 @@ struct migration_arg {
  * So we race with normal scheduler movements, but that's OK, as long
  * as the task is no longer on this CPU.
  */
-static struct rq *__migrate_task(struct rq *rq, struct rq_flags *rf,
+struct rq *__migrate_task(struct rq *rq, struct rq_flags *rf,
 				 struct task_struct *p, int dest_cpu)
 {
 	/* Affinity changed (again). */
@@ -1890,6 +1890,7 @@ static struct rq *__migrate_task(struct rq *rq, struct rq_flags *rf,
 
 	return rq;
 }
+EXPORT_SYMBOL_GPL(__migrate_task);
 
 /*
  * migration_cpu_stop - this will be executed by a highprio stopper thread
