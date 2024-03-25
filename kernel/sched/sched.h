@@ -1369,7 +1369,7 @@ DECLARE_PER_CPU(u64, clock_task_mult);
 
 static inline u64 rq_clock_task_mult(struct rq *rq)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_rq_held(rq);
 	assert_clock_updated(rq);
 
 	return per_cpu(clock_task_mult, cpu_of(rq));
