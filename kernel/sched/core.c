@@ -2477,7 +2477,7 @@ EXPORT_SYMBOL_GPL(kick_process);
  * select_task_rq() below may allow selection of !active CPUs in order
  * to satisfy the above rules.
  */
-static int select_fallback_rq(int cpu, struct task_struct *p)
+int select_fallback_rq(int cpu, struct task_struct *p)
 {
 	int nid = cpu_to_node(cpu);
 	const struct cpumask *nodemask = NULL;
@@ -2546,6 +2546,7 @@ out:
 
 	return dest_cpu;
 }
+EXPORT_SYMBOL_GPL(select_fallback_rq);
 
 /*
  * The caller (fork, wakeup) owns p->pi_lock, ->cpus_ptr is stable.
@@ -6980,7 +6981,7 @@ static void calc_load_migrate(struct rq *rq)
 		atomic_long_add(delta, &calc_load_tasks);
 }
 
-static struct task_struct *__pick_migrate_task(struct rq *rq)
+struct task_struct *__pick_migrate_task(struct rq *rq)
 {
 	const struct sched_class *class;
 	struct task_struct *next;
@@ -6996,7 +6997,7 @@ static struct task_struct *__pick_migrate_task(struct rq *rq)
 	/* The idle class should always have a runnable task */
 	BUG();
 }
-
+EXPORT_SYMBOL_GPL(__pick_migrate_task);
 /*
  * Migrate all tasks from the rq, sleeping tasks will be migrated by
  * try_to_wake_up()->select_task_rq().
