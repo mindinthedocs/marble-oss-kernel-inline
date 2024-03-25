@@ -1057,7 +1057,7 @@ static void walt_cfs_account_mvp_runtime(struct rq *rq, struct task_struct *curr
 	s64 delta;
 	unsigned int limit;
 
-	lockdep_assert_held(&rq->__lock);
+	lockdep_assert_held(&rq->lock);
 
 	/*
 	 * RQ clock update happens in tick path in the scheduler.
@@ -1165,7 +1165,7 @@ void walt_cfs_tick(struct rq *rq)
 	if (unlikely(walt_disabled))
 		return;
 
-	raw_spin_lock(&rq->__lock);
+	raw_spin_lock(&rq->lock);
 
 	if (list_empty(&wts->mvp_list))
 		goto out;
@@ -1179,7 +1179,7 @@ void walt_cfs_tick(struct rq *rq)
 		resched_curr(rq);
 
 out:
-	raw_spin_unlock(&rq->__lock);
+	raw_spin_unlock(&rq->lock);
 }
 
 /*
