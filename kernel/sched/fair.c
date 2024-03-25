@@ -3335,7 +3335,7 @@ static inline void update_tg_load_avg(struct cfs_rq *cfs_rq)
 /*
  * Called within set_task_rq() right before setting a task's CPU. The
  * caller only guarantees p->pi_lock is held; no other assumptions,
- * including the state of rq->lock, should be made.
+ * including the state of rq->__lock, should be made.
  */
 void set_task_rq_fair(struct sched_entity *se,
 		      struct cfs_rq *prev, struct cfs_rq *next)
@@ -4821,7 +4821,7 @@ static inline u64 sched_cfs_bandwidth_slice(void)
 /*
  * Replenish runtime according to assigned quota. We use sched_clock_cpu
  * directly instead of rq->clock to avoid adding additional synchronization
- * around rq->lock.
+ * around rq->__lock.
  *
  * requires cfs_b->lock
  */
@@ -5045,7 +5045,7 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 done:
 	/*
 	 * Note: distribution will already see us throttled via the
-	 * throttled-list.  rq->lock protects completion.
+	 * throttled-list.  rq->__lock protects completion.
 	 */
 	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
@@ -5307,7 +5307,7 @@ static void __return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 	if (cfs_b->quota != RUNTIME_INF) {
 		cfs_b->runtime += slack_runtime;
 
-		/* we are under rq->lock, defer unthrottling using a timer */
+		/* we are under rq->__lock, defer unthrottling using a timer */
 		if (cfs_b->runtime > sched_cfs_bandwidth_slice() &&
 		    !list_empty(&cfs_b->throttled_cfs_rq))
 			start_cfs_slack_bandwidth(cfs_b);
@@ -5331,7 +5331,7 @@ static __always_inline void return_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 
 /*
  * This is done with a timer (instead of inline with bandwidth return) since
- * it's necessary to juggle rq->locks to unthrottle their respective cfs_rqs.
+ * it's necessary to juggle rq->__locks to unthrottle their respective cfs_rqs.
  */
 static void do_sched_cfs_slack_timer(struct cfs_bandwidth *cfs_b)
 {
@@ -7162,7 +7162,7 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 	if (p->on_rq == TASK_ON_RQ_MIGRATING) {
 		/*
 		 * In case of TASK_ON_RQ_MIGRATING we in fact hold the 'old'
-		 * rq->lock and can modify state directly.
+		 * rq->__lock and can modify state directly.
 		 */
 		lockdep_assert_rq_held(task_rq(p));
 		detach_entity_cfs_rq(&p->se);
@@ -7550,7 +7550,7 @@ idle:
 	new_tasks = newidle_balance(rq, rf);
 
 	/*
-	 * Because newidle_balance() releases (and re-acquires) rq->lock, it is
+	 * Because newidle_balance() releases (and re-acquires) rq->__lock, it is
 	 * possible for any higher priority task to appear. In that case we
 	 * must re-start the pick_next_entity() loop.
 	 */
@@ -10792,9 +10792,9 @@ void nohz_balance_enter_idle(int cpu)
 		return;
 
 	/*
-	 * Can be set safely without rq->lock held
+	 * Can be set safely without rq->__lock held
 	 * If a clear happens, it will have evaluated last additions because
-	 * rq->lock is held during the check and the clear
+	 * rq->__lock is held during the check and the clear
 	 */
 	rq->has_blocked_load = 1;
 
@@ -10982,7 +10982,7 @@ static void nohz_newidle_balance(struct rq *this_rq)
 	    time_before(jiffies, READ_ONCE(nohz.next_blocked)))
 		return;
 
-	raw_spin_unlock(&this_rq->lock);
+	raw_spin_unlock(&this_rq->__lock);
 	/*
 	 * This CPU is going to be idle and blocked load of idle CPUs
 	 * need to be updated. Run the ilb locally as it is a good
@@ -10991,7 +10991,7 @@ static void nohz_newidle_balance(struct rq *this_rq)
 	 */
 	if (!_nohz_idle_balance(this_rq, NOHZ_STATS_KICK, CPU_NEWLY_IDLE))
 		kick_ilb(NOHZ_STATS_KICK);
-	raw_spin_lock(&this_rq->lock);
+	raw_spin_lock(&this_rq->__lock);
 }
 
 #else /* !CONFIG_NO_HZ_COMMON */

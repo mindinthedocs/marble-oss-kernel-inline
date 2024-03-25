@@ -72,7 +72,7 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 	s64 delta_ns;
 
 	/*
-	 * Since cpufreq_update_util() is called with rq->lock held for
+	 * Since cpufreq_update_util() is called with rq->__lock held for
 	 * the @target_cpu, our per-CPU data is fully serialized.
 	 *
 	 * However, drivers cannot in general deal with cross-CPU
@@ -477,7 +477,7 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	}
 
 	/*
-	 * This code runs under rq->lock for the target CPU, so it won't run
+	 * This code runs under rq->__lock for the target CPU, so it won't run
 	 * concurrently on two different CPUs for the same target and it is not
 	 * necessary to acquire the lock in the fast switch case.
 	 */

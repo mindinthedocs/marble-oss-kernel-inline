@@ -151,7 +151,7 @@ autogroup_move_group(struct task_struct *p, struct autogroup *ag)
 	/*
 	 * We can't avoid sched_move_task() after we changed signal->autogroup,
 	 * this process can already run with task_group() == prev->tg or we can
-	 * race with cgroup code which can read autogroup = prev under rq->lock.
+	 * race with cgroup code which can read autogroup = prev under rq->__lock.
 	 * In the latter case for_each_thread() can not miss a migrating thread,
 	 * cpu_cgroup_attach() must not be possible after cgroup_exit() and it
 	 * can't be removed from thread list, we hold ->siglock.

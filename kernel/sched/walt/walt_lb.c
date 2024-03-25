@@ -43,7 +43,7 @@ static int stop_walt_lb_active_migration(void *data)
 	struct task_struct *push_task;
 	int push_task_detached = 0;
 
-	raw_spin_lock_irq(&busiest_rq->lock);
+	raw_spin_lock_irq(&busiest_rq->__lock);
 	push_task = wrq->push_task;
 
 	/* sanity checks before initiating the pull */
@@ -73,12 +73,12 @@ out_unlock: /* called with busiest_rq lock */
 	target_cpu = busiest_rq->push_cpu;
 	clear_reserved(target_cpu);
 	wrq->push_task = NULL;
-	raw_spin_unlock(&busiest_rq->lock);
+	raw_spin_unlock(&busiest_rq->__lock);
 
 	if (push_task_detached) {
-		raw_spin_lock(&target_rq->lock);
+		raw_spin_lock(&target_rq->__lock);
 		walt_attach_task(push_task, target_rq);
-		raw_spin_unlock(&target_rq->lock);
+		raw_spin_unlock(&target_rq->__lock);
 	}
 
 	if (push_task)
@@ -296,7 +296,7 @@ static int walt_lb_pull_tasks(int dst_cpu, int src_cpu)
 
 	to_lower = dst_wrq->cluster->id < src_wrq->cluster->id;
 
-	raw_spin_lock_irqsave(&src_rq->lock, flags);
+	raw_spin_lock_irqsave(&src_rq->__lock, flags);
 
 	list_for_each_entry_reverse(p, &src_rq->cfs_tasks, se.group_node) {
 
@@ -346,7 +346,7 @@ static int walt_lb_pull_tasks(int dst_cpu, int src_cpu)
 				mark_reserved(dst_cpu);
 
 				/* lock must be dropped before waking the stopper */
-				raw_spin_unlock_irqrestore(&src_rq->lock, flags);
+				raw_spin_unlock_irqrestore(&src_rq->__lock, flags);
 
 				/*
 				 * Using our custom active load balance callback so that
@@ -371,14 +371,14 @@ static int walt_lb_pull_tasks(int dst_cpu, int src_cpu)
 	}
 unlock:
 	/* lock must be dropped before waking the stopper */
-	raw_spin_unlock_irqrestore(&src_rq->lock, flags);
+	raw_spin_unlock_irqrestore(&src_rq->__lock, flags);
 
 	if (!pulled_task)
 		return 0;
 
-	raw_spin_lock_irqsave(&dst_rq->lock, flags);
+	raw_spin_lock_irqsave(&dst_rq->__lock, flags);
 	walt_attach_task(p, dst_rq);
-	raw_spin_unlock_irqrestore(&dst_rq->lock, flags);
+	raw_spin_unlock_irqrestore(&dst_rq->__lock, flags);
 
 	return 1; /* we pulled 1 task */
 }
@@ -606,10 +606,10 @@ void walt_lb_tick(struct rq *rq)
 	struct walt_rq *new_wrq;
 	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
 
-	raw_spin_lock(&rq->lock);
+	raw_spin_lock(&rq->__lock);
 	if (available_idle_cpu(prev_cpu) && is_reserved(prev_cpu) && !rq->active_balance)
 		clear_reserved(prev_cpu);
-	raw_spin_unlock(&rq->lock);
+	raw_spin_unlock(&rq->__lock);
 
 	if (!walt_fair_task(p))
 		return;
@@ -639,16 +639,16 @@ void walt_lb_tick(struct rq *rq)
 	if (!available_idle_cpu(new_cpu) || new_wrq->cluster->id <= prev_wrq->cluster->id)
 		goto out_unlock;
 
-	raw_spin_lock(&rq->lock);
+	raw_spin_lock(&rq->__lock);
 	if (rq->active_balance) {
-		raw_spin_unlock(&rq->lock);
+		raw_spin_unlock(&rq->__lock);
 		goto out_unlock;
 	}
 	rq->active_balance = 1;
 	rq->push_cpu = new_cpu;
 	get_task_struct(p);
 	prev_wrq->push_task = p;
-	raw_spin_unlock(&rq->lock);
+	raw_spin_unlock(&rq->__lock);
 
 	mark_reserved(new_cpu);
 	raw_spin_unlock_irqrestore(&walt_lb_migration_lock, flags);
@@ -824,7 +824,7 @@ static void walt_newidle_balance(void *unused, struct rq *this_rq,
 		goto repin;
 
 	help_min_cap = should_help_min_cap(this_cpu);
-	raw_spin_unlock(&this_rq->lock);
+	raw_spin_unlock(&this_rq->__lock);
 
 	/*
 	 * careful, we dropped the lock, and has to be acquired
@@ -903,7 +903,7 @@ found_busy_cpu:
 	*pulled_task = walt_lb_pull_tasks(this_cpu, busy_cpu);
 
 unlock:
-	raw_spin_lock(&this_rq->lock);
+	raw_spin_lock(&this_rq->__lock);
 rt_pulled:
 	if (this_rq->cfs.h_nr_running && !*pulled_task)
 		*pulled_task = 1;

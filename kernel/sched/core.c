@@ -362,7 +362,7 @@ int sysctl_sched_rt_runtime = 950000;
  * Lock order:
  *
  *   p->pi_lock
- *     rq->lock
+ *     rq->__lock
  *       hrtimer_cpu_base->lock (hrtimer_start() for bandwidth controls)
  *
  *  rq1->lock
@@ -370,23 +370,23 @@ int sysctl_sched_rt_runtime = 950000;
  *
  * Regular state:
  *
- * Normal scheduling state is serialized by rq->lock. __schedule() takes the
- * local CPU's rq->lock, it optionally removes the task from the runqueue and
+ * Normal scheduling state is serialized by rq->__lock. __schedule() takes the
+ * local CPU's rq->__lock, it optionally removes the task from the runqueue and
  * always looks at the local rq data structures to find the most elegible task
  * to run next.
  *
- * Task enqueue is also under rq->lock, possibly taken from another CPU.
+ * Task enqueue is also under rq->__lock, possibly taken from another CPU.
  * Wakeups from another LLC domain might use an IPI to transfer the enqueue to
  * the local CPU to avoid bouncing the runqueue state around [ see
  * ttwu_queue_wakelist() ]
  *
  * Task wakeup, specifically wakeups that involve migration, are horribly
- * complicated to avoid having to take two rq->locks.
+ * complicated to avoid having to take two rq->__locks.
  *
  * Special state:
  *
  * System-calls and anything external will use task_rq_lock() which acquires
- * both p->pi_lock and rq->lock. As a consequence the state they change is
+ * both p->pi_lock and rq->__lock. As a consequence the state they change is
  * stable while holding either lock:
  *
  *  - sched_setaffinity()/
@@ -410,15 +410,15 @@ int sysctl_sched_rt_runtime = 950000;
  * p->on_rq <- { 0, 1 = TASK_ON_RQ_QUEUED, 2 = TASK_ON_RQ_MIGRATING }:
  *
  *   is set by activate_task() and cleared by deactivate_task(), under
- *   rq->lock. Non-zero indicates the task is runnable, the special
+ *   rq->__lock. Non-zero indicates the task is runnable, the special
  *   ON_RQ_MIGRATING state is used for migration without holding both
- *   rq->locks. It indicates task_cpu() is not stable, see task_rq_lock().
+ *   rq->__locks. It indicates task_cpu() is not stable, see task_rq_lock().
  *
  * p->on_cpu <- { 0, 1 }:
  *
  *   is set by prepare_task() and cleared by finish_task() such that it will be
  *   set before p is scheduled-in and cleared after p is scheduled-out, both
- *   under rq->lock. Non-zero indicates the task is running on its CPU.
+ *   under rq->__lock. Non-zero indicates the task is running on its CPU.
  *
  *   [ The astute reader will observe that it is possible for two tasks on one
  *     CPU to have ->on_cpu = 1 at the same time. ]
@@ -432,9 +432,9 @@ int sysctl_sched_rt_runtime = 950000;
  *
  *  - for try_to_wake_up(), called under p->pi_lock:
  *
- *    This allows try_to_wake_up() to only take one rq->lock, see its comment.
+ *    This allows try_to_wake_up() to only take one rq->__lock, see its comment.
  *
- *  - for migration called under rq->lock:
+ *  - for migration called under rq->__lock:
  *    [ see task_on_rq_migrating() in task_rq_lock() ]
  *
  *    o move_queued_task()
@@ -526,7 +526,7 @@ void double_rq_lock(struct rq *rq1, struct rq *rq2)
  * __task_rq_lock - lock the rq @p resides on.
  */
 struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
-	__acquires(rq->lock)
+	__acquires(rq->__lock)
 {
 	struct rq *rq;
 
@@ -552,7 +552,7 @@ EXPORT_SYMBOL_GPL(__task_rq_lock);
  */
 struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
 	__acquires(p->pi_lock)
-	__acquires(rq->lock)
+	__acquires(rq->__lock)
 {
 	struct rq *rq;
 
@@ -563,15 +563,15 @@ struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
 		/*
 		 *	move_queued_task()		task_rq_lock()
 		 *
-		 *	ACQUIRE (rq->lock)
+		 *	ACQUIRE (rq->__lock)
 		 *	[S] ->on_rq = MIGRATING		[L] rq = task_rq()
-		 *	WMB (__set_task_cpu())		ACQUIRE (rq->lock);
+		 *	WMB (__set_task_cpu())		ACQUIRE (rq->__lock);
 		 *	[S] ->cpu = new_cpu		[L] task_rq()
 		 *					[L] ->on_rq
-		 *	RELEASE (rq->lock)
+		 *	RELEASE (rq->__lock)
 		 *
 		 * If we observe the old CPU in task_rq_lock(), the acquire of
-		 * the old rq->lock will fully serialize against the stores.
+		 * the old rq->__lock will fully serialize against the stores.
 		 *
 		 * If we observe the new CPU in task_rq_lock(), the address
 		 * dependency headed by '[L] rq = task_rq()' and the acquire
@@ -735,7 +735,7 @@ static void __hrtick_start(void *arg)
 /*
  * Called to set the hrtick timer state.
  *
- * called with rq->lock held and irqs disabled
+ * called with rq->__lock held and irqs disabled
  */
 void hrtick_start(struct rq *rq, u64 delay)
 {
@@ -759,7 +759,7 @@ void hrtick_start(struct rq *rq, u64 delay)
 /*
  * Called to set the hrtick timer state.
  *
- * called with rq->lock held and irqs disabled
+ * called with rq->__lock held and irqs disabled
  */
 void hrtick_start(struct rq *rq, u64 delay)
 {
@@ -2105,7 +2105,7 @@ inline int task_curr(const struct task_struct *p)
 }
 
 /*
- * switched_from, switched_to and prio_changed must _NOT_ drop rq->lock,
+ * switched_from, switched_to and prio_changed must _NOT_ drop rq->__lock,
  * use the balance_callback list if you want balancing.
  *
  * this means any call to check_class_changed() must be followed by a call to
@@ -2266,7 +2266,7 @@ static int migration_cpu_stop(void *data)
 	rq_lock(rq, &rf);
 	/*
 	 * If task_rq(p) != rq, it cannot be migrated here, because we're
-	 * holding rq->lock, if p->on_rq == 0 it cannot get enqueued because
+	 * holding rq->__lock, if p->on_rq == 0 it cannot get enqueued because
 	 * we're holding p->pi_lock.
 	 */
 	if (task_rq(p) == rq) {
@@ -2306,7 +2306,7 @@ void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 	if (queued) {
 		/*
 		 * Because __kthread_bind() calls this on blocked tasks without
-		 * holding rq->lock.
+		 * holding rq->__lock.
 		 */
 		lockdep_assert_rq_held(rq);
 		dequeue_task(rq, p, DEQUEUE_SAVE | DEQUEUE_NOCLOCK);
@@ -2323,7 +2323,7 @@ void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 }
 
 /*
- * Called with both p->pi_lock and rq->lock held; drops both before returning.
+ * Called with both p->pi_lock and rq->__lock held; drops both before returning.
  */
 static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
 					 const struct cpumask *new_mask,
@@ -2522,8 +2522,8 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 
 #ifdef CONFIG_LOCKDEP
 	/*
-	 * The caller should hold either p->pi_lock or rq->lock, when changing
-	 * a task's CPU. ->pi_lock for waking tasks, rq->lock for runnable tasks.
+	 * The caller should hold either p->pi_lock or rq->__lock, when changing
+	 * a task's CPU. ->pi_lock for waking tasks, rq->__lock for runnable tasks.
 	 *
 	 * sched_move_task() holds both and thus holding either pins the cgroup,
 	 * see task_group().
@@ -2805,7 +2805,7 @@ void kick_process(struct task_struct *p)
 EXPORT_SYMBOL_GPL(kick_process);
 
 /*
- * ->cpus_ptr is protected by both rq->lock and p->pi_lock
+ * ->cpus_ptr is protected by both rq->__lock and p->pi_lock
  *
  * A few notes on cpu_active vs cpu_online:
  *
@@ -3019,7 +3019,7 @@ static void ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags,
 	if (p->sched_class->task_woken) {
 		/*
 		 * Our task @p is fully woken up and running; so its safe to
-		 * drop the rq->lock, hereafter rq is only used for statistics.
+		 * drop the rq->__lock, hereafter rq is only used for statistics.
 		 */
 		rq_unpin_lock(rq, rf);
 		p->sched_class->task_woken(rq, p);
@@ -3380,7 +3380,7 @@ static void ttwu_queue(struct task_struct *p, int cpu, int wake_flags)
  * in order to do migration, see its use of select_task_rq()/set_task_cpu().
  *
  * Tries really hard to only take one task_rq(p)->lock for performance.
- * Takes rq->lock in:
+ * Takes rq->__lock in:
  *  - ttwu_runnable()    -- old rq, unavoidable, see comment there;
  *  - ttwu_queue()       -- new rq, for enqueue of the task;
  *  - psi_ttwu_dequeue() -- much sadness :-( accounting will kill us.
@@ -3456,17 +3456,17 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 *
 	 * sched_ttwu_pending()			try_to_wake_up()
 	 *   STORE p->on_rq = 1			  LOAD p->state
-	 *   UNLOCK rq->lock
+	 *   UNLOCK rq->__lock
 	 *
 	 * __schedule() (switch to task 'p')
-	 *   LOCK rq->lock			  smp_rmb();
+	 *   LOCK rq->__lock			  smp_rmb();
 	 *   smp_mb__after_spinlock();
-	 *   UNLOCK rq->lock
+	 *   UNLOCK rq->__lock
 	 *
 	 * [task p]
 	 *   STORE p->state = UNINTERRUPTIBLE	  LOAD p->on_rq
 	 *
-	 * Pairs with the LOCK+smp_mb__after_spinlock() on rq->lock in
+	 * Pairs with the LOCK+smp_mb__after_spinlock() on rq->__lock in
 	 * __schedule().  See the comment for smp_mb__after_spinlock().
 	 *
 	 * A similar smb_rmb() lives in try_invoke_on_locked_down_task().
@@ -3488,14 +3488,14 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 *
 	 * __schedule() (switch to task 'p')	try_to_wake_up()
 	 *   STORE p->on_cpu = 1		  LOAD p->on_rq
-	 *   UNLOCK rq->lock
+	 *   UNLOCK rq->__lock
 	 *
 	 * __schedule() (put 'p' to sleep)
-	 *   LOCK rq->lock			  smp_rmb();
+	 *   LOCK rq->__lock			  smp_rmb();
 	 *   smp_mb__after_spinlock();
 	 *   STORE p->on_rq = 0			  LOAD p->on_cpu
 	 *
-	 * Pairs with the LOCK+smp_mb__after_spinlock() on rq->lock in
+	 * Pairs with the LOCK+smp_mb__after_spinlock() on rq->__lock in
 	 * __schedule().  See the comment for smp_mb__after_spinlock().
 	 *
 	 * Form a control-dep-acquire with p->on_rq == 0 above, to ensure
@@ -3524,7 +3524,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 * set_task_cpu(p, cpu);
 	 *   STORE p->cpu = @cpu
 	 * __schedule() (switch to task 'p')
-	 *   LOCK rq->lock
+	 *   LOCK rq->__lock
 	 *   smp_mb__after_spin_lock()		smp_cond_load_acquire(&p->on_cpu)
 	 *   STORE p->on_cpu = 1		LOAD p->cpu
 	 *
@@ -3974,7 +3974,7 @@ void wake_up_new_task(struct task_struct *p)
 #ifdef CONFIG_SMP
 	if (p->sched_class->task_woken) {
 		/*
-		 * Nothing relies on rq->lock after this, so its fine to
+		 * Nothing relies on rq->__lock after this, so its fine to
 		 * drop it.
 		 */
 		rq_unpin_lock(rq, &rf);
@@ -4253,7 +4253,7 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
  * because prev may have moved to another CPU.
  */
 static struct rq *finish_task_switch(struct task_struct *prev)
-	__releases(rq->lock)
+	__releases(rq->__lock)
 {
 	struct rq *rq = this_rq();
 	struct mm_struct *mm = rq->prev_mm;
@@ -4266,7 +4266,7 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 	 *	schedule()
 	 *	  preempt_disable();			// 1
 	 *	  __schedule()
-	 *	    raw_spin_lock_irq(&rq->lock)	// 2
+	 *	    raw_spin_lock_irq(&rq->__lock)	// 2
 	 *
 	 * Also, see FORK_PREEMPT_COUNT.
 	 */
@@ -4339,7 +4339,7 @@ static struct rq *finish_task_switch(struct task_struct *prev)
  * @prev: the thread we just switched away from.
  */
 asmlinkage __visible void schedule_tail(struct task_struct *prev)
-	__releases(rq->lock)
+	__releases(rq->__lock)
 {
 	struct rq *rq;
 
@@ -4347,7 +4347,7 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	 * New tasks start with FORK_PREEMPT_COUNT, see there and
 	 * finish_task_switch() for details.
 	 *
-	 * finish_task_switch() will drop rq->lock() and lower preempt_count
+	 * finish_task_switch() will drop rq->__lock() and lower preempt_count
 	 * and the preempt_enable() will end up enabling preemption (on
 	 * PREEMPT_COUNT kernels).
 	 */
@@ -4959,8 +4959,8 @@ static void put_prev_task_balance(struct rq *rq, struct task_struct *prev,
 	const struct sched_class *class;
 	/*
 	 * We must do the balancing pass before put_prev_task(), such
-	 * that when we release the rq->lock the task is in the same
-	 * state as before we took rq->lock.
+	 * that when we release the rq->__lock the task is in the same
+	 * state as before we took rq->__lock.
 	 *
 	 * We can terminate the balance pass as soon as we know there is
 	 * a runnable task of @class priority or higher.
@@ -5137,7 +5137,7 @@ static void __sched notrace __schedule(bool preempt)
 	 * __set_current_state(@state)		signal_wake_up()
 	 * schedule()				  set_tsk_thread_flag(p, TIF_SIGPENDING)
 	 *					  wake_up_state(p, state)
-	 *   LOCK rq->lock			    LOCK p->pi_state
+	 *   LOCK rq->__lock			    LOCK p->pi_state
 	 *   smp_mb__after_spinlock()		    smp_mb__after_spinlock()
 	 *     if (signal_pending_state())	    if (p->state & @state)
 	 *
@@ -5566,7 +5566,7 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	rq = __task_rq_lock(p, &rf);
 	update_rq_clock(rq);
 	/*
-	 * Set under pi_lock && rq->lock, such that the value can be used under
+	 * Set under pi_lock && rq->__lock, such that the value can be used under
 	 * either lock.
 	 *
 	 * Note that there is loads of tricky to make this pointer cache work
@@ -7287,11 +7287,11 @@ void __init init_idle(struct task_struct *idle, int cpu)
 #endif
 	/*
 	 * We're having a chicken and egg problem, even though we are
-	 * holding rq->lock, the CPU isn't yet set to this CPU so the
+	 * holding rq->__lock, the CPU isn't yet set to this CPU so the
 	 * lockdep check in task_group() will fail.
 	 *
 	 * Similar case to sched_fork(). / Alternatively we could
-	 * use task_rq_lock() here and obtain the other rq->lock.
+	 * use task_rq_lock() here and obtain the other rq->__lock.
 	 *
 	 * Silence PROVE_RCU
 	 */
@@ -7463,7 +7463,7 @@ EXPORT_SYMBOL_GPL(__pick_migrate_task);
  * Migrate all tasks from the rq, sleeping tasks will be migrated by
  * try_to_wake_up()->select_task_rq().
  *
- * Called with rq->lock held even though we'er in stop_machine() and
+ * Called with rq->__lock held even though we'er in stop_machine() and
  * there's no concurrency possible, we hold the required locks anyway
  * because of lock validation efforts.
  *
@@ -7526,10 +7526,10 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf, bool force)
 
 		/*
 		 * Rules for changing task_struct::cpus_mask are holding
-		 * both pi_lock and rq->lock, such that holding either
+		 * both pi_lock and rq->__lock, such that holding either
 		 * stabilizes the mask.
 		 *
-		 * Drop rq->lock is not quite as disastrous as it usually is
+		 * Drop rq->__lock is not quite as disastrous as it usually is
 		 * because !cpu_active at this point, which means load-balance
 		 * will not interfere. Also, stop-machine.
 		 */
@@ -7540,7 +7540,7 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf, bool force)
 		/*
 		 * Since we're inside stop-machine, _nothing_ should have
 		 * changed the task, WARN if weird stuff happened, because in
-		 * that case the above rq->lock drop is a fail too.
+		 * that case the above rq->__lock drop is a fail too.
 		 */
 		if (task_rq(next) != rq || !task_on_rq_queued(next)) {
 			/*

@@ -107,7 +107,7 @@ static u64 cpuacct_cpuusage_read(struct cpuacct *ca, int cpu,
 
 #ifndef CONFIG_64BIT
 	/*
-	 * Take rq->lock to make 64-bit read safe on 32-bit platforms.
+	 * Take rq->__lock to make 64-bit read safe on 32-bit platforms.
 	 */
 	raw_spin_rq_lock_irq(cpu_rq(cpu));
 #endif
@@ -143,7 +143,7 @@ static void cpuacct_cpuusage_write(struct cpuacct *ca, int cpu)
 
 #ifndef CONFIG_64BIT
 	/*
-	 * Take rq->lock to make 64-bit write safe on 32-bit platforms.
+	 * Take rq->__lock to make 64-bit write safe on 32-bit platforms.
 	 */
 	raw_spin_rq_lock_irq(cpu_rq(cpu));
 #endif
@@ -324,7 +324,7 @@ static struct cftype files[] = {
 /*
  * charge this task's execution time to its accounting group.
  *
- * called with rq->lock held.
+ * called with rq->__lock held.
  */
 void cpuacct_charge(struct task_struct *tsk, u64 cputime)
 {

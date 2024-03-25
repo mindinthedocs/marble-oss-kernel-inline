@@ -883,7 +883,7 @@ static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun)
 		int skip;
 
 		/*
-		 * When span == cpu_online_mask, taking each rq->lock
+		 * When span == cpu_online_mask, taking each rq->__lock
 		 * can be time-consuming. Try to avoid it when possible.
 		 */
 		raw_spin_lock(&rt_rq->rt_runtime_lock);
@@ -2014,7 +2014,7 @@ retry:
 	if (!lowest_rq) {
 		struct task_struct *task;
 		/*
-		 * find_lock_lowest_rq releases rq->lock
+		 * find_lock_lowest_rq releases rq->__lock
 		 * so it is possible that next_task has migrated.
 		 *
 		 * We need to make sure that the task is still on the same
@@ -2275,7 +2275,7 @@ static void pull_rt_task(struct rq *this_rq)
 		src_rq = cpu_rq(cpu);
 
 		/*
-		 * Don't bother taking the src_rq->lock if the next highest
+		 * Don't bother taking the src_rq->__lock if the next highest
 		 * task is known to be lower-priority than our current task.
 		 * This may look racy, but if this value is about to go
 		 * logically higher, the src_rq will push this task away.
@@ -2354,7 +2354,7 @@ static void task_woken_rt(struct rq *rq, struct task_struct *p)
 		push_rt_tasks(rq);
 }
 
-/* Assumes rq->lock is held */
+/* Assumes rq->__lock is held */
 static void rq_online_rt(struct rq *rq)
 {
 	if (rq->rt.overloaded)
@@ -2365,7 +2365,7 @@ static void rq_online_rt(struct rq *rq)
 	cpupri_set(&rq->rd->cpupri, rq->cpu, rq->rt.highest_prio.curr);
 }
 
-/* Assumes rq->lock is held */
+/* Assumes rq->__lock is held */
 static void rq_offline_rt(struct rq *rq)
 {
 	if (rq->rt.overloaded)

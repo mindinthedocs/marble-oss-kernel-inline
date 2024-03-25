@@ -38,7 +38,7 @@ void
 detach_one_task_core(struct task_struct *p, struct rq *rq,
 		     struct list_head *tasks)
 {
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	p->on_rq = TASK_ON_RQ_MIGRATING;
 	deactivate_task(rq, p, 0);
@@ -49,7 +49,7 @@ void attach_tasks_core(struct list_head *tasks, struct rq *rq)
 {
 	struct task_struct *p;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_held(&rq->__lock);
 
 	while (!list_empty(tasks)) {
 		p = list_first_entry(tasks, struct task_struct, se.group_node);
@@ -65,7 +65,7 @@ void attach_tasks_core(struct list_head *tasks, struct rq *rq)
  * Migrate all tasks from the rq, sleeping tasks will be migrated by
  * try_to_wake_up()->select_task_rq().
  *
- * Called with rq->lock held even though we'er in stop_machine() and
+ * Called with rq->__lock held even though we'er in stop_machine() and
  * there's no concurrency possible, we hold the required locks anyway
  * because of lock validation efforts.
  *
@@ -126,10 +126,10 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf)
 
 		/*
 		 * Rules for changing task_struct::cpus_mask are holding
-		 * both pi_lock and rq->lock, such that holding either
+		 * both pi_lock and rq->__lock, such that holding either
 		 * stabilizes the mask.
 		 *
-		 * Drop rq->lock is not quite as disastrous as it usually is
+		 * Drop rq->__lock is not quite as disastrous as it usually is
 		 * because !cpu_active at this point, which means load-balance
 		 * will not interfere. Also, stop-machine.
 		 */
@@ -140,7 +140,7 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf)
 		/*
 		 * Since we're inside stop-machine, _nothing_ should have
 		 * changed the task, WARN if weird stuff happened, because in
-		 * that case the above rq->lock drop is a fail too.
+		 * that case the above rq->__lock drop is a fail too.
 		 */
 		if (task_rq(next) != rq || !task_on_rq_queued(next)) {
 			raw_spin_unlock(&next->pi_lock);

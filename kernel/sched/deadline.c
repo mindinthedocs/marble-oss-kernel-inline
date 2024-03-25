@@ -1122,8 +1122,8 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
 	 */
 	if (has_pushable_dl_tasks(rq)) {
 		/*
-		 * Nothing relies on rq->lock after this, so its safe to drop
-		 * rq->lock.
+		 * Nothing relies on rq->__lock after this, so its safe to drop
+		 * rq->__lock.
 		 */
 		rq_unpin_lock(rq, &rf);
 		push_dl_task(rq);
@@ -1735,7 +1735,7 @@ static void migrate_task_rq_dl(struct task_struct *p, int new_cpu __maybe_unused
 	/*
 	 * Since p->state == TASK_WAKING, set_task_cpu() has been called
 	 * from try_to_wake_up(). Hence, p->pi_lock is locked, but
-	 * rq->lock is not... So, lock it
+	 * rq->__lock is not... So, lock it
 	 */
 	raw_spin_rq_lock(rq);
 	if (p->dl.dl_non_contending) {
@@ -2175,7 +2175,7 @@ retry:
 
 		/*
 		 * We must check all this again, since
-		 * find_lock_later_rq releases rq->lock and it is
+		 * find_lock_later_rq releases rq->__lock and it is
 		 * then possible that next_task has migrated.
 		 */
 		task = pick_next_pushable_dl_task(rq);
@@ -2256,7 +2256,7 @@ static void pull_dl_task(struct rq *this_rq)
 				   src_rq->dl.earliest_dl.next))
 			continue;
 
-		/* Might drop this_rq->lock */
+		/* Might drop this_rq->__lock */
 		double_lock_balance(this_rq, src_rq);
 
 		/*
@@ -2354,7 +2354,7 @@ static void set_cpus_allowed_dl(struct task_struct *p,
 	set_cpus_allowed_common(p, new_mask);
 }
 
-/* Assumes rq->lock is held */
+/* Assumes rq->__lock is held */
 static void rq_online_dl(struct rq *rq)
 {
 	if (rq->dl.overloaded)
@@ -2365,7 +2365,7 @@ static void rq_online_dl(struct rq *rq)
 		cpudl_set(&rq->rd->cpudl, rq->cpu, rq->dl.earliest_dl.curr);
 }
 
-/* Assumes rq->lock is held */
+/* Assumes rq->__lock is held */
 static void rq_offline_dl(struct rq *rq)
 {
 	if (rq->dl.overloaded)
@@ -2659,7 +2659,7 @@ void sched_dl_do_global(void)
  * constraints. If yes, this function also accordingly updates the currently
  * allocated bandwidth to reflect the new situation.
  *
- * This function is called while holding p's rq->lock.
+ * This function is called while holding p's rq->__lock.
  */
 int sched_dl_overflow(struct task_struct *p, int policy,
 		      const struct sched_attr *attr)

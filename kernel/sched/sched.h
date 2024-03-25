@@ -1474,14 +1474,14 @@ static inline void rq_repin_lock(struct rq *rq, struct rq_flags *rf)
 }
 
 struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
-	__acquires(rq->lock);
+	__acquires(rq->__lock);
 
 struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
 	__acquires(p->pi_lock)
-	__acquires(rq->lock);
+	__acquires(rq->__lock);
 
 static inline void __task_rq_unlock(struct rq *rq, struct rq_flags *rf)
-	__releases(rq->lock)
+	__releases(rq->__lock)
 {
 	rq_unpin_lock(rq, rf);
 	raw_spin_rq_unlock(rq);
@@ -1489,7 +1489,7 @@ static inline void __task_rq_unlock(struct rq *rq, struct rq_flags *rf)
 
 static inline void
 task_rq_unlock(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
-	__releases(rq->lock)
+	__releases(rq->__lock)
 	__releases(p->pi_lock)
 {
 	rq_unpin_lock(rq, rf);
@@ -1499,7 +1499,7 @@ task_rq_unlock(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
 
 static inline void
 rq_lock_irqsave(struct rq *rq, struct rq_flags *rf)
-	__acquires(rq->lock)
+	__acquires(rq->__lock)
 {
 	raw_spin_rq_lock_irqsave(rq, rf->flags);
 	rq_pin_lock(rq, rf);
@@ -1507,7 +1507,7 @@ rq_lock_irqsave(struct rq *rq, struct rq_flags *rf)
 
 static inline void
 rq_lock_irq(struct rq *rq, struct rq_flags *rf)
-	__acquires(rq->lock)
+	__acquires(rq->__lock)
 {
 	raw_spin_rq_lock_irq(rq);
 	rq_pin_lock(rq, rf);
@@ -1515,7 +1515,7 @@ rq_lock_irq(struct rq *rq, struct rq_flags *rf)
 
 static inline void
 rq_lock(struct rq *rq, struct rq_flags *rf)
-	__acquires(rq->lock)
+	__acquires(rq->__lock)
 {
 	raw_spin_rq_lock(rq);
 	rq_pin_lock(rq, rf);
@@ -1523,7 +1523,7 @@ rq_lock(struct rq *rq, struct rq_flags *rf)
 
 static inline void
 rq_relock(struct rq *rq, struct rq_flags *rf)
-	__acquires(rq->lock)
+	__acquires(rq->__lock)
 {
 	raw_spin_rq_lock(rq);
 	rq_repin_lock(rq, rf);
@@ -1531,7 +1531,7 @@ rq_relock(struct rq *rq, struct rq_flags *rf)
 
 static inline void
 rq_unlock_irqrestore(struct rq *rq, struct rq_flags *rf)
-	__releases(rq->lock)
+	__releases(rq->__lock)
 {
 	rq_unpin_lock(rq, rf);
 	raw_spin_rq_unlock_irqrestore(rq, rf->flags);
@@ -1539,7 +1539,7 @@ rq_unlock_irqrestore(struct rq *rq, struct rq_flags *rf)
 
 static inline void
 rq_unlock_irq(struct rq *rq, struct rq_flags *rf)
-	__releases(rq->lock)
+	__releases(rq->__lock)
 {
 	rq_unpin_lock(rq, rf);
 	raw_spin_rq_unlock_irq(rq);
@@ -1547,7 +1547,7 @@ rq_unlock_irq(struct rq *rq, struct rq_flags *rf)
 
 static inline void
 rq_unlock(struct rq *rq, struct rq_flags *rf)
-	__releases(rq->lock)
+	__releases(rq->__lock)
 {
 	rq_unpin_lock(rq, rf);
 	raw_spin_rq_unlock(rq);
@@ -1555,7 +1555,7 @@ rq_unlock(struct rq *rq, struct rq_flags *rf)
 
 static inline struct rq *
 this_rq_lock_irq(struct rq_flags *rf)
-	__acquires(rq->lock)
+	__acquires(rq->__lock)
 {
 	struct rq *rq;
 
@@ -2041,9 +2041,9 @@ struct sched_class {
 	void (*task_dead)(struct task_struct *p);
 
 	/*
-	 * The switched_from() call is allowed to drop rq->lock, therefore we
+	 * The switched_from() call is allowed to drop rq->__lock, therefore we
 	 * cannot assume the switched_from/switched_to pair is serliazed by
-	 * rq->lock. They are however serialized by p->pi_lock.
+	 * rq->__lock. They are however serialized by p->pi_lock.
 	 */
 	void (*switched_from)(struct rq *this_rq, struct task_struct *task);
 	void (*switched_to)  (struct rq *this_rq, struct task_struct *task);
@@ -2338,7 +2338,7 @@ extern void double_rq_lock(struct rq *rq1, struct rq *rq2);
 #ifdef CONFIG_PREEMPTION
 
 /*
- * fair double_lock_balance: Safely acquires both rq->locks in a fair
+ * fair double_lock_balance: Safely acquires both rq->__locks in a fair
  * way at the expense of forcing extra atomic operations in all
  * invocations.  This assures that the double_lock is acquired using the
  * same underlying policy as the spinlock_t on this architecture, which
@@ -2346,9 +2346,9 @@ extern void double_rq_lock(struct rq *rq1, struct rq *rq2);
  * also adds more overhead and therefore may reduce throughput.
  */
 static inline int _double_lock_balance(struct rq *this_rq, struct rq *busiest)
-	__releases(this_rq->lock)
+	__releases(this_rq->__lock)
 	__acquires(busiest->lock)
-	__acquires(this_rq->lock)
+	__acquires(this_rq->__lock)
 {
 	raw_spin_rq_unlock(this_rq);
 	double_rq_lock(this_rq, busiest);
@@ -2365,9 +2365,9 @@ static inline int _double_lock_balance(struct rq *this_rq, struct rq *busiest)
  * regardless of entry order into the function.
  */
 static inline int _double_lock_balance(struct rq *this_rq, struct rq *busiest)
-	__releases(this_rq->lock)
+	__releases(this_rq->__lock)
 	__acquires(busiest->lock)
-	__acquires(this_rq->lock)
+	__acquires(this_rq->__lock)
 {
 	if (__rq_lockp(this_rq) == __rq_lockp(busiest))
 		return 0;
