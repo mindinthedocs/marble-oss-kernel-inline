@@ -30,8 +30,6 @@
 
 #include <linux/sched/walt.h>
 
-#include <linux/sched/walt.h>
-
 #define MAX_RESERVE_CPUS (num_possible_cpus()/2)
 #define SVM_STATE_RUNNING 1
 #define SVM_STATE_SYSTEM_SUSPENDED 3

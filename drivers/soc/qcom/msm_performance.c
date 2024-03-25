@@ -516,7 +516,7 @@ static ssize_t set_cpu_min_freq(struct kobject *kobj,
 	 * of other CPUs in the cluster once it is done for at least one CPU
 	 * in the cluster
 	 */
-	cpus_read_lock();
+	get_online_cpus();
 	for_each_cpu(i, limit_mask_min) {
 		i_cpu_stats = &per_cpu(msm_perf_cpu_stats, i);
 
@@ -532,7 +532,7 @@ static ssize_t set_cpu_min_freq(struct kobject *kobj,
 		for_each_cpu(j, policy.related_cpus)
 			cpumask_clear_cpu(j, limit_mask_min);
 	}
-	cpus_read_unlock();
+	put_online_cpus();
 
 	return count;
 }
@@ -599,7 +599,7 @@ static ssize_t set_cpu_max_freq(struct kobject *kobj,
 		cp++;
 	}
 
-	cpus_read_lock();
+	get_online_cpus();
 	for_each_cpu(i, limit_mask_max) {
 		i_cpu_stats = &per_cpu(msm_perf_cpu_stats, i);
 		if (cpufreq_get_policy(&policy, i))
@@ -614,7 +614,7 @@ static ssize_t set_cpu_max_freq(struct kobject *kobj,
 		for_each_cpu(j, policy.related_cpus)
 			cpumask_clear_cpu(j, limit_mask_max);
 	}
-	cpus_read_unlock();
+	put_online_cpus();
 
 	return count;
 }
@@ -2056,7 +2056,7 @@ static int __init msm_performance_init(void)
 		free_cpumask_var(limit_mask_min);
 		return -ENOMEM;
 	}
-	cpus_read_lock();
+	get_online_cpus();
 	for_each_possible_cpu(cpu) {
 		if (!cpumask_test_cpu(cpu, cpu_online_mask))
 			per_cpu(cpu_is_hp, cpu) = true;
@@ -2067,7 +2067,7 @@ static int __init msm_performance_init(void)
 		hotplug_notify_up,
 		hotplug_notify_down);
 
-	cpus_read_unlock();
+	put_online_cpus();
 
 	msm_perf_kset = kset_create_and_add("msm_performance", NULL, kernel_kobj);
 	if (!msm_perf_kset) {
