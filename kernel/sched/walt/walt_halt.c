@@ -606,8 +606,8 @@ void walt_halt_init(void)
 		get_cpu_device(cpumask_first(cpu_possible_mask))->offline_disabled = true;
 
 	register_trace_android_rvh_get_nohz_timer_target(android_rvh_get_nohz_timer_target, NULL);
-	register_trace_android_rvh_set_cpus_allowed_ptr_locked(
-						android_rvh_set_cpus_allowed_ptr_locked, NULL);
+	register_trace_android_rvh_set_cpus_allowed_by_task(
+						android_rvh_set_cpus_allowed_by_task, NULL);
 	register_trace_android_rvh_rto_next_cpu(android_rvh_rto_next_cpu, NULL);
 	register_trace_android_rvh_is_cpu_allowed(android_rvh_is_cpu_allowed, NULL);
 
