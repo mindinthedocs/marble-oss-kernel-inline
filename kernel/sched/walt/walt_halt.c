@@ -191,7 +191,7 @@ static int drain_rq_cpu_stop(void *data)
 	return 0;
 }
 
-static int sched_cpu_drain_rq_walt(unsigned int cpu)
+static int cpu_drain_rq(unsigned int cpu)
 {
 	if (!cpu_online(cpu))
 		return 0;
