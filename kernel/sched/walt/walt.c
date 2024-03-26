@@ -611,7 +611,7 @@ static inline u64 freq_policy_load(struct rq *rq, unsigned int *reason)
 		load = wrq->prev_runnable_sum +
 					wrq->grp_time.prev_runnable_sum;
 
-	if (cpu_ksoftirqd && READ_ONCE(cpu_ksoftirqd->__state) == TASK_RUNNING) {
+	if (cpu_ksoftirqd && READ_ONCE(cpu_ksoftirqd->state) == TASK_RUNNING) {
 		kload = task_load(cpu_ksoftirqd);
 		if (kload > load) {
 			load = kload;
