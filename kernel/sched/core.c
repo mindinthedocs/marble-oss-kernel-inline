@@ -2164,7 +2164,7 @@ static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
 		return cpu_online(cpu);
 
 	if (cpu_active(cpu)){
-		trace_android_rvh_is_cpu_allowed(cpu, &allowed);
+		trace_android_rvh_is_cpu_allowed(p, cpu, &allowed);
 		return true;
 	}
 
