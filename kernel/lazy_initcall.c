@@ -82,7 +82,6 @@ static const __initconst char * const blacklist[] = {
 		"dispcc_diwali",
 		"gcc_diwali",
 		"gpucc_diwali",
-		"hung_task_enh",
 		"icc_debug",
 		"kryo_arm64_edac",
 		"microdump_collector",
