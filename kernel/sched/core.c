@@ -2004,8 +2004,6 @@ static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 
 	if (sched_core_enabled(rq))
 		sched_core_enqueue(rq, p);
-
-	trace_android_rvh_after_enqueue_task(rq, p);
 }
 
 static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
@@ -4142,10 +4140,11 @@ static inline struct callback_head *splice_balance_callbacks(struct rq *rq)
 	return head;
 }
 
-static void __balance_callbacks(struct rq *rq)
+void __balance_callbacks(struct rq *rq)
 {
 	do_balance_callbacks(rq, splice_balance_callbacks(rq));
 }
+EXPORT_SYMBOL_GPL(__balance_callbacks);
 
 static inline void balance_callbacks(struct rq *rq, struct callback_head *head)
 {
