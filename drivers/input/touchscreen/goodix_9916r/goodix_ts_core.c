@@ -46,10 +46,10 @@
 static bool force_high_report_rate = false;
 module_param(force_high_report_rate, bool, S_IRUGO);
 
-#ifdef CONFIG_TOUCH_BOOST
-extern void touch_irq_boost(void);
-static bool __read_mostly touch_boost_flag = true;
-#endif
+//#ifdef CONFIG_TOUCH_BOOST
+//extern void touch_irq_boost(void);
+static bool __read_mostly touch_boost_flag = false;
+//#endif
 extern struct device *global_spi_parent_device;
 struct goodix_module goodix_modules;
 int core_module_prob_sate = CORE_MODULE_UNPROBED;
@@ -1539,10 +1539,10 @@ static irqreturn_t goodix_ts_threadirq_func(int irq, void *data)
 
 	ts_esd->irq_status = true;
 	core_data->irq_trig_cnt++;
-#ifdef CONFIG_TOUCH_BOOST
-	if (touch_boost_flag)
-		touch_irq_boost();
-#endif
+// #ifdef CONFIG_TOUCH_BOOST
+	// if (touch_boost_flag)
+		// touch_irq_boost();
+// #endif
 	pm_stay_awake(core_data->bus->dev);
 #ifdef CONFIG_PM
 	if (core_data->tp_pm_suspend) {

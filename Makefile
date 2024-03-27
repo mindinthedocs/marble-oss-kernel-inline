@@ -676,11 +676,12 @@ endif
 ifeq ($(KBUILD_EXTMOD),)
 # Objects we will link into vmlinux / subdirs we need to visit
 core-y		:= init/ usr/
-drivers-y	:= drivers/ sound/ techpack/
+drivers-y	:= drivers/ sound/ techpack/ kernel/oplus_cpu/
 drivers-$(CONFIG_SAMPLES) += samples/
 drivers-y	+= net/ virt/
 libs-y		:= lib/
 endif # KBUILD_EXTMOD
+
 
 ifndef KBUILD_MIXED_TREE
 # The all: target is the default when no target is given on the
@@ -689,6 +690,7 @@ ifndef KBUILD_MIXED_TREE
 # Defaults to vmlinux, but the arch makefile usually adds further targets
 all: vmlinux
 endif
+
 
 CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage \
 	$(call cc-option,-fno-tree-loop-im) \

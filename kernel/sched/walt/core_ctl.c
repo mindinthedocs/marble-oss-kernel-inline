@@ -19,6 +19,10 @@
 #include "walt.h"
 #include "trace.h"
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
+#include <../kernel/oplus_cpu/sched/sched_assist/sa_pipeline.h>
+#endif
+
 /* mask of CPUs on which there is an outstanding pause claim */
 static cpumask_t cpus_paused_by_us = { CPU_BITS_NONE };
 
@@ -87,6 +91,24 @@ static unsigned int get_active_cpu_count(const struct cluster_data *cluster);
 
 /* ========================= sysfs interface =========================== */
 
+static noinline int tracing_mark_write_core_ctl(const char *buf)
+{
+	trace_printk(buf);
+	return 0;
+}
+
+static void store_cpus_systrace_c(struct cluster_data *state, unsigned int val, bool max)
+{
+	char buf[256];
+
+	if(max) {
+		snprintf(buf, sizeof(buf), "C|9999|Group%d_max_cpu|%d\n", state->first_cpu, val);
+	} else {
+		snprintf(buf, sizeof(buf), "C|9999|Group%d_min_cpu|%d\n", state->first_cpu, val);
+	}
+	tracing_mark_write_core_ctl(buf);
+}
+
 static ssize_t store_min_cpus(struct cluster_data *state,
 				const char *buf, size_t count)
 {
@@ -97,6 +119,9 @@ static ssize_t store_min_cpus(struct cluster_data *state,
 
 	state->min_cpus = min(val, state->num_cpus);
 	apply_need(state);
+
+	pr_debug("group %u min_cpus: %u from pid=%d comm=%s\n", state->first_cpu, state->min_cpus, current->pid, current->comm);
+	store_cpus_systrace_c(state, state->min_cpus, 0);
 
 	return count;
 }
@@ -116,6 +141,9 @@ static ssize_t store_max_cpus(struct cluster_data *state,
 
 	state->max_cpus = min(val, state->num_cpus);
 	apply_need(state);
+
+	pr_debug("group %u max_cpus: %u from pid=%d comm=%s\n", state->first_cpu, state->max_cpus, current->pid, current->comm);
+	store_cpus_systrace_c(state, state->max_cpus, 1);
 
 	return count;
 }
@@ -355,7 +383,7 @@ static ssize_t store_not_preferred(struct cluster_data *state,
 				   const char *buf, size_t count)
 {
 	struct cpu_data *c;
-	unsigned int i, mask;
+	unsigned int i;
 	unsigned int val[MAX_CPUS_PER_CLUSTER];
 	unsigned long flags;
 	int ret;
@@ -368,16 +396,10 @@ static ssize_t store_not_preferred(struct cluster_data *state,
 		return -EINVAL;
 
 	spin_lock_irqsave(&state_lock, flags);
-	for (i = 0, mask = 0; i < state->num_cpus;) {
-		if (!cpumask_test_cpu(i + mask + state->first_cpu, cpu_possible_mask)) {
-			mask++;
-			continue;
-		}
-
-		c = &per_cpu(cpu_state, i + mask + state->first_cpu);
+	for (i = 0; i < state->num_cpus; i++) {
+		c = &per_cpu(cpu_state, i + state->first_cpu);
 		c->not_preferred = val[i];
 		not_preferred_count += !!val[i];
-		i++;
 	}
 	state->nr_not_preferred_cpus = not_preferred_count;
 	spin_unlock_irqrestore(&state_lock, flags);
@@ -390,19 +412,13 @@ static ssize_t show_not_preferred(const struct cluster_data *state, char *buf)
 	struct cpu_data *c;
 	ssize_t count = 0;
 	unsigned long flags;
-	int i, mask;
+	int i;
 
 	spin_lock_irqsave(&state_lock, flags);
-	for (i = 0, mask = 0; i < state->num_cpus;) {
-		if (!cpumask_test_cpu(i + mask + state->first_cpu, cpu_possible_mask)) {
-			mask++;
-			continue;
-		}
-
-		c = &per_cpu(cpu_state, i + mask + state->first_cpu);
+	for (i = 0; i < state->num_cpus; i++) {
+		c = &per_cpu(cpu_state, i + state->first_cpu);
 		count += scnprintf(buf + count, PAGE_SIZE - count,
 				"CPU#%d: %u\n", c->cpu, c->not_preferred);
-		i++;
 	}
 	spin_unlock_irqrestore(&state_lock, flags);
 
@@ -1237,14 +1253,6 @@ static void __ref do_core_ctl(void)
 
 	core_ctl_pause_cpus(&cpus_to_pause);
 	core_ctl_resume_cpus(&cpus_to_unpause);
-
-	/* Update the final active cpus after the real resume and
-	 * pause actions.
-	 */
-	index = 0;
-	for_each_cluster(cluster, index) {
-		cluster->active_cpus = get_active_cpu_count(cluster);
-	}
 }
 
 static int __ref try_core_ctl(void *data)
@@ -1368,6 +1376,10 @@ int core_ctl_init(void)
 		if (ret)
 			pr_warn("unable to create core ctl group: %d\n", ret);
 	}
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
+	oplus_core_ctl_set_boost = core_ctl_set_boost;
+#endif
 
 	initialized = true;
 
