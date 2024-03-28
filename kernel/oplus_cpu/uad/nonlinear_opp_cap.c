@@ -201,7 +201,7 @@ static void uag_choose_multi_util(struct uag_gov_policy *sg_policy, unsigned lon
 }
 #endif
 
-void update_util_tl(struct uag_gov_policy *sg_policy, unsigned long *util)
+static void update_util_tl(struct uag_gov_policy *sg_policy, unsigned long *util)
 {
 	unsigned long target_util;
 

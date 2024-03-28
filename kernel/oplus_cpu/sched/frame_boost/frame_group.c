@@ -106,7 +106,7 @@ static DEFINE_RAW_SPINLOCK(freq_protect_lock);
 
 static atomic_t fbg_initialized = ATOMIC_INIT(0);
 
-__read_mostly int num_sched_clusters;
+__read_mostly int num_sched_clusters_framegroup;
 
 unsigned long ed_task_boost_mid_duration;
 unsigned long ed_task_boost_max_duration;
@@ -123,9 +123,9 @@ static struct task_struct *game_ed_user_task = NULL;
 static DEFINE_RAW_SPINLOCK(game_ed_lock); /* protect game_ed_user_task */
 static struct irq_work game_ed_irq_work;
 
-struct list_head cluster_head;
+struct list_head cluster_head_framegroup;
 #define for_each_sched_cluster(cluster) \
-	list_for_each_entry_rcu(cluster, &cluster_head, list)
+	list_for_each_entry_rcu(cluster, &cluster_head_framegroup, list)
 
 
 /*********************************
@@ -220,7 +220,7 @@ static void cleanup_clusters(struct list_head *head)
 
 	list_for_each_entry_safe(cluster, tmp, head, list) {
 		list_del(&cluster->list);
-		num_sched_clusters--;
+		num_sched_clusters_framegroup--;
 		kfree(cluster);
 	}
 }
@@ -262,9 +262,9 @@ static inline void add_cluster(const struct cpumask *cpus, struct list_head *hea
 	cluster = alloc_new_cluster(cpus);
 	insert_cluster(cluster, head);
 
-	fb_cluster[num_sched_clusters] = cluster;
+	fb_cluster[num_sched_clusters_framegroup] = cluster;
 
-	num_sched_clusters++;
+	num_sched_clusters_framegroup++;
 }
 
 static inline void assign_cluster_ids(struct list_head *head)
@@ -283,10 +283,10 @@ static bool build_clusters(void)
 	struct list_head new_head;
 	int i;
 
-	INIT_LIST_HEAD(&cluster_head);
+	INIT_LIST_HEAD(&cluster_head_framegroup);
 	INIT_LIST_HEAD(&new_head);
 
-	/* If this work failed, our cluster_head can still used with only one cluster struct */
+	/* If this work failed, our cluster_head_framegroup can still used with only one cluster struct */
 	for_each_cpu(i, &cpus) {
 		cpumask_clear(&cluster_cpus);
 		get_possible_siblings(i, &cluster_cpus);
@@ -299,7 +299,7 @@ static bool build_clusters(void)
 	}
 
 	assign_cluster_ids(&new_head);
-	move_list(&cluster_head, &new_head);
+	move_list(&cluster_head_framegroup, &new_head);
 	return true;
 }
 
@@ -1323,20 +1323,20 @@ static struct oplus_sched_cluster *best_cluster(struct frame_group *grp)
 	/* We hope to spread frame group task, if preferred_cluster has only
 	 * one core and platform has 3 clusters, try to find available_cluster
 	 */
-	if (num_sched_clusters <= 2) {
+	if (num_sched_clusters_framegroup <= 2) {
 		grp->available_cluster = NULL;
 	} else {
-		if (fb_cluster[num_sched_clusters-1]->id == best_cluster->id) {
+		if (fb_cluster[num_sched_clusters_framegroup-1]->id == best_cluster->id) {
 			/* if best_cluster is cpu7, then available_cluster is cpu4-6 */
-			grp->available_cluster = fb_cluster[num_sched_clusters-2];
+			grp->available_cluster = fb_cluster[num_sched_clusters_framegroup-2];
 
-		} else if (fb_cluster[num_sched_clusters-2]->id == best_cluster->id) {
+		} else if (fb_cluster[num_sched_clusters_framegroup-2]->id == best_cluster->id) {
 			/* if best_cluster is cpu4-6, then available_cluster is cpu7 */
-			grp->available_cluster = fb_cluster[num_sched_clusters-1];
+			grp->available_cluster = fb_cluster[num_sched_clusters_framegroup-1];
 
-		} else if (fb_cluster[num_sched_clusters-3]->id == best_cluster->id) {
+		} else if (fb_cluster[num_sched_clusters_framegroup-3]->id == best_cluster->id) {
 			/* if best_cluster is cpu0-3, then available_cluster is cpu4~6 */
-			grp->available_cluster = fb_cluster[num_sched_clusters-2];
+			grp->available_cluster = fb_cluster[num_sched_clusters_framegroup-2];
 		}
 	}
 
@@ -2954,7 +2954,7 @@ int frame_group_init(void)
 
 	for_each_sched_cluster(cluster)
 		ofb_debug("num_cluster=%d id=%d cpumask=%*pbl capacity=%lu num_cpus=%d\n",
-			num_sched_clusters, cluster->id, cpumask_pr_args(&cluster->cpus),
+			num_sched_clusters_framegroup, cluster->id, cpumask_pr_args(&cluster->cpus),
 			arch_scale_cpu_capacity(cpumask_first(&cluster->cpus)),
 			num_possible_cpus());
 

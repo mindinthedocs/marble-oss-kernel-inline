@@ -42,7 +42,7 @@ static PLIST_HEAD(hot_thread_head);
 static DEFINE_RAW_SPINLOCK(hot_thread_lock);
 static struct work_struct rqlen_notify_work;
 
-void plist_add(struct plist_node *node, struct plist_head *head)
+void plist_add_osi(struct plist_node *node, struct plist_head *head)
 {
 	struct plist_node *first, *iter, *prev = NULL;
 	struct list_head *node_next = &head->node_list;
@@ -86,7 +86,7 @@ int find_in_plist(struct task_struct *p,  struct oplus_task_struct *ots)
 	if (is_find) {
 		plist_del(&tmp->node, &hot_thread_head);
 		plist_node_init(&tmp->node, INT_MAX - tmp->hot_thread_struct.total_cnt);
-		plist_add(&tmp->node, &hot_thread_head);
+		plist_add_osi(&tmp->node, &hot_thread_head);
 		return 0;
 	}
 	return -ESRCH;
@@ -134,7 +134,7 @@ static int insert_hot_thread(struct oplus_task_struct *ots, struct task_struct *
 				hot_thread_node->hot_thread_struct.non_topapp_cnt = 1;
 			hot_thread_node->hot_thread_struct.total_cnt = 1;
 			plist_node_init(&hot_thread_node->node, INT_MAX - hot_thread_node->hot_thread_struct.total_cnt);
-			plist_add(&hot_thread_node->node, &hot_thread_head);
+			plist_add_osi(&hot_thread_node->node, &hot_thread_head);
 	}
 done:
 	raw_spin_unlock_irqrestore(&hot_thread_lock, flags);
