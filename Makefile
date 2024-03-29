@@ -523,7 +523,7 @@ LINUXINCLUDE    := \
 KBUILD_AFLAGS   := -D__ASSEMBLY__ -fno-PIE
 KBUILD_CFLAGS   :=-Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common -fshort-wchar -fno-PIE \
-		   -Wimplicit-function-declaration -Wimplicit-int \
+		   -Werror=implicit-function-declaration -Wimplicit-int \
 		   -Wreturn-type -Wno-format-security \
 		   -std=gnu89
 KBUILD_CPPFLAGS := -D__KERNEL__
@@ -676,7 +676,7 @@ endif
 ifeq ($(KBUILD_EXTMOD),)
 # Objects we will link into vmlinux / subdirs we need to visit
 core-y		:= init/ usr/
-drivers-y	:= drivers/ sound/ techpack/
+drivers-y	:= drivers/ sound/ techpack/ kernel/oplus_cpu/
 drivers-$(CONFIG_SAMPLES) += samples/
 drivers-y	+= net/ virt/
 libs-y		:= lib/
