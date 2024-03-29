@@ -43,10 +43,12 @@
 #define SM8450_SOC_ID    457
 #define SM7450_SOC_ID    506
 #define SM8550_SOC_ID    519
+#define SM7475_SOC_ID    591
 #define PLATFORM_SM8350  "lahaina"
 #define PLATFORM_SM8450  "waipio"
 #define PLATFORM_SM7450  "diwali"
 #define PLATFORM_SM8550  "kalama"
+#define PLATFORM_SM7475  "ukee"
 
 /* define the cluster information */
 #define MAX_CLUSTER      3
@@ -305,6 +307,67 @@ static unsigned int sm8550_pd_goplus[21] = {
 	8,/* Turbo_L3 */
 	9,/* Boost */
 	10 /* BoostPlus */
+};
+
+static unsigned int sm7475_cluster_pd[MAX_CLUSTER] = {14, 17, 19};
+static unsigned int sm7475_pd_sliver[14] = {
+	0,/* LowSVS */
+	0,/* LowSVS */
+	0,/* LowSVS */
+	1,/* SVS */
+	1,/* SVS */
+	2,/* SVS_L1 */
+	2,/* SVS_L1 */
+	3,/* Nominal */
+	3,/* Nominal */
+	3,/* Nominal */
+	4,/* Nominal_L1 */
+	5,/* Turbo */
+	6,/* Turbo_L1 */
+	6 /* Turbo_L1 */
+};
+
+static unsigned int sm7475_pd_golden[17] = {
+	0,/* LowSVS */
+	1,/* SVS */
+	1,/* SVS */
+	2,/* SVS_L1 */
+	2,/* SVS_L1 */
+	3,/* Nominal */
+	3,/* Nominal */
+	4,/* Nominal_L1 */
+	4,/* Nominal_L1 */
+	4,/* Nominal_L1 */
+	5,/* Turbo */
+	6,/* Turbo_L2 */
+	6,/* Turbo_L2 */
+	7,/* Turbo_L3 */
+	7,/* Turbo_L3 */
+	7,/* Turbo_L3 */
+	7/* Turbo_L3 */
+
+};
+
+static unsigned int sm7475_pd_goplus[19] = {
+	0,/* LowSVS */
+	1,/* SVS */
+	1,/* SVS */
+	2,/* SVS_L1 */
+	2,/* SVS_L1 */
+	2,/* SVS_L1 */
+	3,/* Nominal */
+	3,/* Nominal */
+	4,/* Nominal_L1 */
+	4,/* Nominal_L1 */
+	4,/* Nominal_L1 */
+	5,/* Turbo */
+	6,/* Turbo_L1 */
+	6,/* Turbo_L1 */
+	6,/* Turbo_L3 */
+	7,/* Turbo_L3 */
+	7,/* Turbo_L3 */
+	7,/* Turbo_L3 */
+	7/* Boost */
 };
 
 extern unsigned int update_power_effiency_lock(struct cpufreq_policy *policy, unsigned int freq, unsigned int loadadj_freq);

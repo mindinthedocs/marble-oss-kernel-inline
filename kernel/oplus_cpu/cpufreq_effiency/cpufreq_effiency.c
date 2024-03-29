@@ -65,6 +65,12 @@ static int get_cluster_num(struct cpufreq_policy *policy)
                         return -1;
                 }
         }
+	  else if (platform_soc_id == SM7475_SOC_ID) {
+                if(opp_number[cluster_num] != sm7475_cluster_pd[cluster_num]) {
+                        /* pr_err("opp_number: %d  cluster_pd: %d. \n", opp_number[cluster_num], sm7475_cluster_pd[cluster_num]); */
+                        return -1;
+                }
+        }
 
 	/* pr_info("cluster_num: %d platform_soc_id: %d opp_number: %d. \n", cluster_num, platform_soc_id, opp_number[cluster_num]); */
 
@@ -136,7 +142,24 @@ static unsigned int *get_cluster_pd(struct cpufreq_policy *policy)
 				return NULL;
 			break;
 		}
-	} else {
+	}
+	  else if (platform_soc_id == SM7475_SOC_ID) {
+		 switch (cluster_id) {
+			case SLIVER_CLUSTER:
+				 return sm7475_pd_sliver;
+			break;
+			case GOLDEN_CLUSTER:
+				return sm7475_pd_golden;
+			break;
+			case GOPLUS_CLUSTER:
+				return sm7475_pd_goplus;
+			break;
+			default:
+				return NULL;
+			break;
+		}
+	}
+	else {
 		return NULL;
 	}
 }
@@ -296,7 +319,11 @@ static int cpufreq_pd_init(void)
 		platform_soc_id = SM7450_SOC_ID;
 	} else if (strstr(prop_str, PLATFORM_SM8550)) {
 		platform_soc_id = SM8550_SOC_ID;
-	} else {
+	}
+	  else if (strstr(prop_str, PLATFORM_SM7475)) {
+		platform_soc_id = SM7475_SOC_ID;
+	}
+	else {
 		platform_soc_id = ABSENT_SOC_ID;
 	}
 	of_node_put(of_root);
