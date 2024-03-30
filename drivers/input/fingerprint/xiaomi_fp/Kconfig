@@ -1,6 +1,7 @@
-config FINGERPRINT_FPC_1540
-	tristate "Finger print card fpc"
-	default m
+config FINGERPRINT_XIAOMI_FP
+	tristate "Finger print card xiaomi_fp"
+	default n
+	depends on INPUT_FINGERPRINT
 	help
 	  Say Y here to enable support for retrieving self-test reports.
 	  If unsure, say N.
