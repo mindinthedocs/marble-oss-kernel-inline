@@ -89,7 +89,7 @@ bool fbg_cluster_boost(struct task_struct *p, int *target_cpu)
 			break;
 		}
 
-		spare_cap = max_t(long, capacity_of(iter_cpu) - cpu_util_without(iter_cpu, p), 0);
+		spare_cap = max_t(long, capacity_of(iter_cpu) - frame_group_cpu_util_without(iter_cpu, p), 0);
 		if (spare_cap > max_spare_cap) {
 			max_spare_cap = spare_cap;
 			max_spare_cap_cpu = iter_cpu;
