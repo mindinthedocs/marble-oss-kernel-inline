@@ -2210,7 +2210,7 @@ static inline unsigned long _task_util_est(struct task_struct *p)
 	return max(ue.ewma, (ue.enqueued & ~UTIL_AVG_UNCHANGED));
 }
 
-unsigned long cpu_util_without_frame_group(int cpu, struct task_struct *p)
+unsigned long frame_group_cpu_util_without(int cpu, struct task_struct *p)
 {
 	struct cfs_rq *cfs_rq;
 	unsigned int util;
@@ -2231,14 +2231,14 @@ unsigned long cpu_util_without_frame_group(int cpu, struct task_struct *p)
 	 * a) if *p is the only task sleeping on this CPU, then:
 	 *      cpu_util (== task_util) > util_est (== 0)
 	 *    and thus we return:
-	 *      cpu_util_without_frame_group = (cpu_util - task_util) = 0
+	 *      frame_group_cpu_util_without = (cpu_util - task_util) = 0
 	 *
 	 * b) if other tasks are SLEEPING on this CPU, which is now exiting
 	 *    IDLE, then:
 	 *      cpu_util >= task_util
 	 *      cpu_util > util_est (== 0)
 	 *    and thus we discount *p's blocked utilization to return:
-	 *      cpu_util_without_frame_group = (cpu_util - task_util) >= 0
+	 *      frame_group_cpu_util_without = (cpu_util - task_util) >= 0
 	 *
 	 * c) if other tasks are RUNNABLE on that CPU and
 	 *      util_est > cpu_util
@@ -2390,7 +2390,7 @@ retry:
 			ret = true;
 			goto out;
 		}
-		spare_cap = max_t(long, capacity_of(iter_cpu) - cpu_util_without_frame_group(iter_cpu, p), 0);
+		spare_cap = max_t(long, capacity_of(iter_cpu) - frame_group_cpu_util_without(iter_cpu, p), 0);
 		if (spare_cap > max_spare_cap) {
 			max_spare_cap = spare_cap;
 			max_spare_cap_cpu = iter_cpu;
