@@ -77,7 +77,6 @@ static const __initconst char * const blacklist[] = {
 		"coresight_tpdm",
 		"debug_regulator",
 		"debugcc_diwali",
-		"debugcc_waipio",
 		"dispcc_diwali",
 		"gcc_diwali",
 		"gpucc_diwali",

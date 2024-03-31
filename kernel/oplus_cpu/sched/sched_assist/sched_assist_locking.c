@@ -339,7 +339,7 @@ static void android_vh_mutex_wait_start_handler(void *unused, struct mutex *lock
 	update_locking_time(jiffies, false);
 }
 
-static void android_vh_rtmutex_wait_start_handler(void *unused, struct rt_mutex_base *lock)
+static void android_vh_rtmutex_wait_start_handler(void *unused, struct rt_mutex *lock)
 {
 	update_locking_time(jiffies, false);
 }
