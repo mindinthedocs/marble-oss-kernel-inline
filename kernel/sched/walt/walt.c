@@ -206,7 +206,7 @@ void walt_task_dump(struct task_struct *p)
 
 	printk_deferred("Task: %.16s-%d\n", p->comm, p->pid);
 	SCHED_PRINT(READ_ONCE(p->__state));
-	SCHED_PRINT(task_thread_info(p)->cpu);
+	SCHED_PRINT(p->cpu);
 	SCHED_PRINT(p->policy);
 	SCHED_PRINT(p->prio);
 	SCHED_PRINT(wts->mark_start);
@@ -4933,9 +4933,9 @@ static void android_rvh_enqueue_task(void *unused, struct rq *rq,
 	if (!is_per_cpu_kthread(p))
 		wrq->enqueue_counter++;
 
-	if (task_thread_info(p)->cpu != cpu_of(rq))
+	if (p->cpu != cpu_of(rq))
 		WALT_BUG(WALT_BUG_UPSTREAM, p, "enqueuing on rq %d when task->cpu is %d\n",
-				cpu_of(rq), task_thread_info(p)->cpu);
+				cpu_of(rq), p->cpu);
 
 	/* catch double enqueue */
 	if (wts->prev_on_rq == 1) {
