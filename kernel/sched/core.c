@@ -7471,23 +7471,6 @@ struct task_struct *pick_migrate_task(struct rq *rq)
 }
 EXPORT_SYMBOL_GPL(pick_migrate_task);
 
-static int __balance_push_cpu_stop(void *arg)
-{
-	const struct sched_class *class;
-	struct task_struct *next;
-
-	for_each_class(class) {
-		next = class->pick_next_task(rq);
-		if (next) {
-			next->sched_class->put_prev_task(rq, next);
-			return next;
-		}
-	}
-
-	/* The idle class should always have a runnable task */
-	BUG();
-}
-EXPORT_SYMBOL_GPL(__pick_migrate_task);
 /*
  * Migrate all tasks from the rq, sleeping tasks will be migrated by
  * try_to_wake_up()->select_task_rq().
@@ -7537,7 +7520,7 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf, bool force)
 		if (rq->nr_running == 1)
 			break;
 
-		next = __pick_migrate_task(rq);
+		next = pick_migrate_task(rq);
 
 		/*
 		 * Argh ... no iterator for tasks, we need to remove the

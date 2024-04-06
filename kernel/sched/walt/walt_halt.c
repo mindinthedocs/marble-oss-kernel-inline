@@ -9,6 +9,8 @@
 #include <walt.h>
 #include "trace.h"
 
+extern int select_fallback_rq(int cpu, struct task_struct *p);
+
 #ifdef CONFIG_HOTPLUG_CPU
 
 enum pause_type {
@@ -159,7 +161,7 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf)
 		/* Find suitable destination for @next */
 		dest_cpu = select_fallback_rq(dead_rq->cpu, next);
 
-		if (cpu_of(rq) != dest_cpu && !is_migration_disabled(next)) {
+		if (cpu_of(rq) != dest_cpu) {
 			/* only perform a required migration */
 			rq = __migrate_task(rq, rf, next, dest_cpu);
 
@@ -577,7 +579,7 @@ static void android_rvh_set_cpus_allowed_by_task(void *unused,
 	if (p->flags & PF_KTHREAD)
 		return;
 
-	if (cpu_halted(*dest_cpu) && !p->migration_disabled) {
+	if (cpu_halted(*dest_cpu)) {
 		cpumask_t allowed_cpus;
 
 		if (unlikely(is_compat_thread(task_thread_info(p)) && p->in_execve))

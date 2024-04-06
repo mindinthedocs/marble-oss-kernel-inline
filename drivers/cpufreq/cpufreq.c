@@ -2395,7 +2395,6 @@ int cpufreq_register_governor(struct cpufreq_governor *governor)
 		err = 0;
 		list_add(&governor->governor_list, &cpufreq_governor_list);
 	}
-
 	mutex_unlock(&cpufreq_governor_mutex);
 	return err;
 }

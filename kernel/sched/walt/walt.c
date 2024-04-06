@@ -205,7 +205,7 @@ void walt_task_dump(struct task_struct *p)
 	bool is_32bit_thread = is_compat_thread(task_thread_info(p));
 
 	printk_deferred("Task: %.16s-%d\n", p->comm, p->pid);
-	SCHED_PRINT(READ_ONCE(p->__state));
+	SCHED_PRINT(READ_ONCE(p->state));
 	SCHED_PRINT(p->cpu);
 	SCHED_PRINT(p->policy);
 	SCHED_PRINT(p->prio);
@@ -602,7 +602,7 @@ static inline u64 freq_policy_load(struct rq *rq, unsigned int *reason)
 		load = wrq->prev_runnable_sum +
 					wrq->grp_time.prev_runnable_sum;
 
-	if (cpu_ksoftirqd && READ_ONCE(cpu_ksoftirqd->__state) == TASK_RUNNING) {
+	if (cpu_ksoftirqd && READ_ONCE(cpu_ksoftirqd->state) == TASK_RUNNING) {
 		kload = task_load(cpu_ksoftirqd);
 		if (kload > load) {
 			load = kload;
@@ -1061,10 +1061,10 @@ static void migrate_busy_time_subtraction(struct task_struct *p, int new_cpu)
 	struct walt_rq *src_wrq = &per_cpu(walt_rq, cpu_of(src_rq));
 	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
 
-	if (!p->on_rq && READ_ONCE(p->__state) != TASK_WAKING)
+	if (!p->on_rq && READ_ONCE(p->state) != TASK_WAKING)
 		return;
 
-	pstate = READ_ONCE(p->__state);
+	pstate = READ_ONCE(p->state);
 
 	if (pstate == TASK_WAKING)
 		raw_spin_rq_lock(src_rq);
@@ -2375,7 +2375,7 @@ static void walt_update_task_ravg(struct task_struct *p, struct rq *rq, int even
 	update_task_demand(p, rq, event, wallclock);
 	update_cpu_busy_time(p, rq, event, wallclock, irqtime);
 	update_task_pred_demand(rq, p, event);
-	if (event == PUT_PREV_TASK && READ_ONCE(p->__state))
+	if (event == PUT_PREV_TASK && READ_ONCE(p->state))
 		wts->iowaited = p->in_iowait;
 
 	trace_sched_update_task_ravg(p, rq, event, wallclock, irqtime,
@@ -5137,7 +5137,7 @@ static void android_vh_scheduler_tick(void *unused, struct rq *rq)
 	walt_lb_tick(rq);
 }
 
-static void android_rvh_schedule(void *unused, unsigned int sched_mode, struct task_struct *prev,
+static void android_rvh_schedule(void *unused, struct task_struct *prev,
 		struct task_struct *next, struct rq *rq)
 {
 	u64 wallclock;
@@ -5464,9 +5464,13 @@ static void walt_init(struct work_struct *work)
 	kmemleak_not_leak(hdr);
 
 	input_boost_init();
+	print("walt: input boost init okay");
 	core_ctl_init();
+	print("walt: core ctl init okay");
 	walt_boost_init();
+	print("walt: boost init okay");
 	waltgov_register();
+	print("walt: register okay");
 
 	i = match_string(sched_feat_names, __SCHED_FEAT_NR, "TTWU_QUEUE");
 	if (i >= 0) {
@@ -5474,7 +5478,7 @@ static void walt_init(struct work_struct *work)
 		sysctl_sched_features &= ~(1UL << i);
 	}
 
-	topology_clear_scale_freq_source(SCALE_FREQ_SOURCE_ARCH, cpu_online_mask);
+	//topology_clear_scale_freq_source(SCALE_FREQ_SOURCE_ARCH, cpu_online_mask);
 }
 
 static DECLARE_WORK(walt_init_work, walt_init);

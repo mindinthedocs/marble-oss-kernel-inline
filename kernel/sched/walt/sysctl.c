@@ -417,7 +417,7 @@ static int sched_task_handler(struct ctl_table *table, int write,
 		break;
 	case PIPELINE:
 		rq = task_rq_lock(task, &rf);
-		if (READ_ONCE(task->__state) == TASK_DEAD) {
+		if (READ_ONCE(task->state) == TASK_DEAD) {
 			ret = -EINVAL;
 			task_rq_unlock(rq, task, &rf);
 			goto put_task;

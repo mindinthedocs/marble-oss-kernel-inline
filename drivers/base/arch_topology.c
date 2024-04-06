@@ -21,7 +21,7 @@
 #include <linux/sched.h>
 #include <linux/smp.h>
 #include <trace/hooks/topology.h>
-
+#include <trace/hooks/sched.h>
 bool topology_scale_freq_invariant(void)
 {
 	return cpufreq_supports_freq_invariance() ||
