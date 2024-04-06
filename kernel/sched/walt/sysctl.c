@@ -89,6 +89,7 @@ unsigned int sysctl_sched_sbt_delay_windows;
 unsigned int high_perf_cluster_freq_cap[MAX_CLUSTERS];
 unsigned int sysctl_sched_pipeline_cpus;
 unsigned int fmax_cap[MAX_FREQ_CAP][MAX_CLUSTERS];
+EXPORT_SYMBOL(fmax_cap);
 
 /* range is [1 .. INT_MAX] */
 static int sysctl_task_read_pid = 1;
@@ -1176,6 +1177,7 @@ struct ctl_table walt_table[] = {
 		.mode		= 0644,
 		.proc_handler	= sched_task_handler,
 	},
+#if !IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
 	{
 		.procname	= "sched_pipeline",
 		.data		= (int *) PIPELINE,
@@ -1183,6 +1185,7 @@ struct ctl_table walt_table[] = {
 		.mode		= 0644,
 		.proc_handler	= sched_task_handler,
 	},
+#endif
 	{
 		.procname	= "task_load_boost",
 		.data		= (int *) LOAD_BOOST,

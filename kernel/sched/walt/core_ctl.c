@@ -21,6 +21,10 @@
 #include "walt.h"
 #include "trace.h"
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
+#include <../kernel/oplus_cpu/sched/sched_assist/sa_pipeline.h>
+#endif
+
 /* mask of all CPUs with a fully pause claim outstanding */
 static cpumask_t cpus_paused_by_us = { CPU_BITS_NONE };
 
