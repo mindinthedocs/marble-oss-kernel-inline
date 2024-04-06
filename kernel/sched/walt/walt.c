@@ -5464,13 +5464,13 @@ static void walt_init(struct work_struct *work)
 	kmemleak_not_leak(hdr);
 
 	input_boost_init();
-	print("walt: input boost init okay");
+	printk("walt: input boost init okay");
 	core_ctl_init();
-	print("walt: core ctl init okay");
+	printk("walt: core ctl init okay");
 	walt_boost_init();
-	print("walt: boost init okay");
+	printk("walt: boost init okay");
 	waltgov_register();
-	print("walt: register okay");
+	printk("walt: register okay");
 
 	i = match_string(sched_feat_names, __SCHED_FEAT_NR, "TTWU_QUEUE");
 	if (i >= 0) {
