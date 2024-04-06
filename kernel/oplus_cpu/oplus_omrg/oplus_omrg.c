@@ -27,7 +27,7 @@
 #include <linux/irq_work.h>
 
 #define CREATE_TRACE_POINTS
-#include <trace/events/oplus_omrg_trace.h>
+#include "oplus_omrg_trace.h"
 
 #include <linux/oplus_omrg.h>
 

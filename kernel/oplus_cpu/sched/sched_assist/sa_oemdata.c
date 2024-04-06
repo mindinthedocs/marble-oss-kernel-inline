@@ -5,7 +5,6 @@
 #include <linux/slab.h>
 #include <linux/sched/task.h>
 #include <linux/minmax.h>
-#include <linux/align.h>
 #include <asm/cache.h>
 #include <linux/topology.h>
 #include <linux/vmalloc.h>

@@ -288,12 +288,12 @@ static void plist_check_head(struct plist_head *head)
 #endif
 
 /**
- * plist_add - add @node to @head
+ * plist_add_sab - add @node to @head
  *
  * @node:	&struct plist_node pointer
  * @head:	&struct plist_head pointer
  */
-void plist_add(struct plist_node *node, struct plist_head *head)
+void plist_add_sab(struct plist_node *node, struct plist_head *head)
 {
 	struct plist_node *first, *iter, *prev = NULL;
 	struct list_head *node_next = &head->node_list;
@@ -327,12 +327,12 @@ ins_node:
 }
 
 /**
- * plist_del - Remove a @node from plist.
+ * plist_del_sab - Remove a @node from plist.
  *
  * @node:	&struct plist_node pointer - entry to be removed
  * @head:	&struct plist_head pointer - list head
  */
-void plist_del(struct plist_node *node, struct plist_head *head)
+void plist_del_sab(struct plist_node *node, struct plist_head *head)
 {
 	plist_check_head(head);
 
@@ -461,7 +461,7 @@ static inline int migrate_degrades_locality(struct task_struct *p,
 }
 #endif
 
-const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
+const_debug unsigned int sysctl_sched_migration_cost_sab	= 500000UL;
 
 /*
  * Is this task likely cache-hot:
@@ -498,22 +498,22 @@ static int task_hot(struct task_struct *p, struct lb_env *env)
 			 &p->se == cfs_rq_of(&p->se)->last))
 		return 1;
 
-	if (sysctl_sched_migration_cost == -1)
+	if (sysctl_sched_migration_cost_sab == -1)
 		return 1;
 
 	/*
 	 * Don't migrate task if the task's cookie does not match
 	 * with the destination CPU's core cookie.
 	 */
-	if (!sched_core_cookie_match(cpu_rq(env->dst_cpu), p))
-		return 1;
+	//if (!sched_core_cookie_match(cpu_rq(env->dst_cpu), p))
+		//return 1;
 
-	if (sysctl_sched_migration_cost == 0)
+	if (sysctl_sched_migration_cost_sab == 0)
 		return 0;
 
 	delta = rq_clock_task(env->src_rq) - p->se.exec_start;
 
-	return delta < (s64)sysctl_sched_migration_cost;
+	return delta < (s64)sysctl_sched_migration_cost_sab;
 }
 
 enum KTHREAD_BITS {
@@ -542,7 +542,7 @@ struct kthread {
  *
  * Per construction; when:
  *
- *   (p->flags & PF_KTHREAD) && p->worker_private
+ *   (p->flags & PF_KTHREAD) && p->set_child_tid
  *
  * the task is both a kthread and struct kthread is persistent. However
  * PF_KTHREAD on it's own is not, kernel_thread() can exec() (See umh.c and
@@ -550,13 +550,13 @@ struct kthread {
  */
 static inline struct kthread *__to_kthread(struct task_struct *p)
 {
-	void *kthread = p->worker_private;
+	void *kthread = (__force void *)p->set_child_tid;
 	if (kthread && !(p->flags & PF_KTHREAD))
 		kthread = NULL;
 	return kthread;
 }
 
-bool kthread_is_per_cpu(struct task_struct *p)
+static bool kthread_is_per_cpu_sab(struct task_struct *p)
 {
 	struct kthread *kthread = __to_kthread(p);
 	if (!kthread)
@@ -600,7 +600,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	 */
 
 	/* Disregard pcpu kthreads; they are where they need to be. */
-	if (kthread_is_per_cpu(p))
+	if (kthread_is_per_cpu_sab(p))
 		return 0;
 
 	if (!cpumask_test_cpu(env->dst_cpu, p->cpus_ptr)) {
@@ -642,7 +642,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	/* Record that we found at least one task that could run on dst_cpu */
 	env->flags &= ~LBF_ALL_PINNED;
 
-	if (task_on_cpu(env->src_rq, p)) {
+	if (task_running(env->src_rq, p)) {
 		/*
 		 * del by oplus.
 		 * schedstat_inc(p->se.statistics.nr_failed_migrations_running);
@@ -2075,9 +2075,9 @@ void add_rt_boost_task(struct task_struct *p)
 
 	/* Sort according to the priority obtained by im_flag mapping. */
 	spin_lock_irqsave(&rbt_lock, irqflag);
-	plist_del(&ots->rtb, &rt_boost_task);
+	plist_del_sab(&ots->rtb, &rt_boost_task);
 	plist_node_init(&ots->rtb, prio);
-	plist_add(&ots->rtb, &rt_boost_task);
+	plist_add_sab(&ots->rtb, &rt_boost_task);
 	spin_unlock_irqrestore(&rbt_lock, irqflag);
 }
 
@@ -2116,14 +2116,14 @@ void remove_rt_boost_task(struct task_struct *p)
 
 	/* Sort according to the priority obtained by im_flag mapping. */
 	spin_lock_irqsave(&rbt_lock, irqflag);
-	plist_del(&ots->rtb, &rt_boost_task);
+	plist_del_sab(&ots->rtb, &rt_boost_task);
 	plist_node_init(&ots->rtb, MAX_IM_FLAG_PRIO);
 
 	/*
 	 * NOTE:
 	 * A memory barrier is needed here to prevent access to the
 	 * rt_boost_task linked list operation in the task_is_rt_boost
-	 * function prior to the plist_del operation above.
+	 * function prior to the plist_del_sab operation above.
 	 *
 	 * See link below and ALM:5878635 for more information.
 	 * http://lkml.kernel.org/r/20170414223138.GA4222@fury
@@ -2196,7 +2196,7 @@ void release_rt_boost_task(void)
 
 	spin_lock_irqsave(&rbt_lock, irqflag);
 	plist_for_each_entry_safe(ots, tmp, &rt_boost_task, rtb) {
-		plist_del(&ots->rtb, &rt_boost_task);
+		plist_del_sab(&ots->rtb, &rt_boost_task);
 		plist_node_init(&ots->rtb, MAX_IM_FLAG_PRIO);
 	}
 	plist_head_init(&rt_boost_task);
@@ -2563,7 +2563,7 @@ __maybe_unused static void oplus_tick_balance(void *data, struct rq *rq)
 #define MAX_CPU		(OPLUS_NR_CPUS - 1)
 #define PERCENTAGE	100
 
-inline unsigned long capacity_of(int cpu)
+static inline unsigned long capacity_of(int cpu)
 {
 	return cpu_rq(cpu)->cpu_capacity;
 }
@@ -2625,7 +2625,7 @@ static struct task_struct *oplus_pick_runnable_rt_boost(
 		 * Remove task from rt_boost group if it is in TASK_DEAD state.
 		 */
 		if (READ_ONCE(task->state) == TASK_DEAD) {
-			plist_del(&ots->rtb, &rt_boost_task);
+			plist_del_sab(&ots->rtb, &rt_boost_task);
 			plist_node_init(&ots->rtb, MAX_IM_FLAG_PRIO);
 			continue;
 		}
@@ -2718,7 +2718,7 @@ static struct task_struct *oplus_pick_runnable_rt_normal(
 		/*
 		 * skip running rt thread.
 		 */
-		if (task_on_cpu(src_rq, p))
+		if (task_running(src_rq, p))
 			continue;
 
 		/*

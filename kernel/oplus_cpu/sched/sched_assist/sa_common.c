@@ -1369,7 +1369,7 @@ android_rvh_schedule_handler_t fbg_android_rvh_schedule_callback;
 EXPORT_SYMBOL(fbg_android_rvh_schedule_callback);
 #endif
 
-void android_rvh_schedule_handler(void *unused, unsigned int sched_mode, struct task_struct *prev, struct task_struct *next, struct rq *rq)
+void android_rvh_schedule_handler(void *unused, struct task_struct *prev, struct task_struct *next, struct rq *rq)
 {
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_CPU_JANKINFO)
 	jankinfo_android_rvh_schedule_handler(unused, prev, next, rq);

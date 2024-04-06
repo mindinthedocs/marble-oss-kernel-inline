@@ -2657,7 +2657,7 @@ static void fbg_try_to_wake_up(void *unused, struct task_struct *p)
 #endif
 
 static void fbg_update_freq_hook(void *unused, bool preempt, struct task_struct *prev,
-	struct task_struct *next, unsigned int prev_state)
+	struct task_struct *next)
 {
 	u64 fbg_wall_clock = fbg_ktime_get_ns();
 	struct rq *rq = NULL;
