@@ -820,7 +820,7 @@ walt_pd_compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *p
 	struct rq *rq = NULL;
 	unsigned int avg_nr_running = 1;
 	unsigned int count_cpu = 0;
-	int cluster_id = topology_cluster_id(cpumask_first(pd_mask));
+	int cluster_id = topology_physical_package_id(cpumask_first(pd_mask));
 	int util_thresh = 0;
 	unsigned long capacity =  arch_scale_cpu_capacity(cpumask_first(pd_mask));
 #endif
@@ -858,8 +858,8 @@ walt_pd_compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *p
 		//util = avg_nr_running * util * oplus_cap_multiple[4] * 1024 / oplus_cap_multiple[cluster_id] >>  SCHED_CAPACITY_SHIFT;
 		max_util = (util_thresh < max_util) ?
 			(util_thresh + ((avg_nr_running * (max_util-util_thresh)*nr_oplus_cap_multiple[cluster_id]) >> SCHED_CAPACITY_SHIFT)) : max_util;
-		if (unlikely(eas_opt_debug_enable))
-			trace_printk("[eas_opt]: cluster_id: %d, capacity: %d, util_thresh: %d, avg_nr_running: %d, origin_max_util: %d, max_util: %d, util_thresh_percent: %d\n", cluster_id, capacity, util_thresh, avg_nr_running, max_util_bak, max_util, util_thresh_percent[cluster_id]);
+		//if (unlikely(eas_opt_debug_enable))
+			//trace_printk("[eas_opt]: cluster_id: %d, capacity: %d, util_thresh: %d, avg_nr_running: %d, origin_max_util: %d, max_util: %d, util_thresh_percent: %d\n", cluster_id, capacity, util_thresh, avg_nr_running, max_util_bak, max_util, util_thresh_percent[cluster_id]);
 	}
 #endif
 

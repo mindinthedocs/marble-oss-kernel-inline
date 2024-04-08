@@ -548,7 +548,7 @@ unsigned int cpufreq_driver_resolve_freq(struct cpufreq_policy *policy,
 	unsigned int old_target_freq = target_freq;
 
 	target_freq = clamp_val(target_freq, policy->min, policy->max);
-	trace_android_vh_cpufreq_resolve_freq(policy, target_freq, old_target_freq);
+	trace_android_vh_cpufreq_resolve_freq(policy, &target_freq, old_target_freq);
 	policy->cached_target_freq = target_freq;
 
 	if (cpufreq_driver->target_index) {

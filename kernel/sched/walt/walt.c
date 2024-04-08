@@ -96,7 +96,7 @@ EXPORT_SYMBOL(sched_ravg_window);
 
 int min_possible_cluster_id;
 int max_possible_cluster_id;
-unsigned int fmax_es_cap[MAX_CLUSTERS] = {FREQ_QOS_MAX_DEFAULT_VALUE, 2956800, FREQ_QOS_MAX_DEFAULT_VALUE, 3187200};
+unsigned int fmax_es_cap[MAX_CLUSTERS] = {FREQ_QOS_MAX_DEFAULT_VALUE, 2956800, FREQ_QOS_MAX_DEFAULT_VALUE};
 /* Initial task load. Newly created tasks are assigned this load. */
 unsigned int __read_mostly sched_init_task_load_windows;
 /*
@@ -4516,7 +4516,7 @@ void update_cpu_capacity_helper(int cpu)
 
 	old = rq->cpu_capacity_orig;
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
-	cluster_id = topology_cluster_id(cpu);
+	cluster_id = topology_physical_package_id(cpu);
 	if (eas_opt_enable && cluster_id >= 0 && cluster_id < OPLUS_CLUSTERS)
 		rq->cpu_capacity_orig = mult_frac(min(fmax_capacity, thermal_cap), oplus_cap_multiple[cluster_id], 100);
 	else
@@ -4708,19 +4708,11 @@ void fmax_uncap_checkpoint(int nr_big, u64 window_start, u32 wakeup_ctr_sum)
 			thres_based_uncap(window_start);
 
 	if (fmax_uncap_load_detected) {
-		if (!fmax_uncap_timestamp) {
+		if (!fmax_uncap_timestamp)
 			for (i = 0; i < num_sched_clusters; i++)
 				fmax_cap[SMART_FMAX_CAP][i] = FREQ_QOS_MAX_DEFAULT_VALUE;
-#if IS_ENABLED(CONFIG_OPLUS_FEATURE_ABNORMAL_FLAG)
-			if (!(is_full_throttle_boost() || is_conservative_boost() || !sysctl_abnormal_enable)) {
-#else
-			if (!(is_full_throttle_boost() || is_conservative_boost())) {
-#endif
-				for (i = 0; i < num_sched_clusters; i++)
-					fmax_cap[SMART_FMAX_CAP][i] = fmax_es_cap[i];
-			}
 		fmax_uncap_timestamp = window_start;
-	}}} else {
+	} else {
 		for (int i = 0; i < num_sched_clusters; i++) {
 			if (fmax_cap[SMART_FMAX_CAP][i] != sysctl_fmax_cap[i]) {
 				change = true;

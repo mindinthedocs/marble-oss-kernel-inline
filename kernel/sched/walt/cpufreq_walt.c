@@ -37,7 +37,7 @@
 /* Target load. Lower values result in higher CPU speeds. */
 #define DEFAULT_TARGET_LOAD 80
 static unsigned int default_target_loads[] = {DEFAULT_TARGET_LOAD};
-#define MAX_CLUSTERS 4
+#define MAX_CLUSTERS 3
 static int init_flag[MAX_CLUSTERS];
 #endif
 
@@ -332,7 +332,7 @@ unsigned int get_targetload(struct cpufreq_policy *policy)
 	unsigned int target_load = 80;
 
 	first_cpu = cpumask_first(policy->related_cpus);
-	cluster_id = topology_cluster_id(first_cpu);
+	cluster_id = topology_physical_package_id(first_cpu);
 
 	if (cluster_id >= MAX_CLUSTERS)
 		return target_load;
@@ -803,7 +803,7 @@ static unsigned int waltgov_next_freq_shared(struct waltgov_cpu *wg_cpu, u64 tim
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
 	unsigned int avg_nr_running = 1;
 	unsigned int count_cpu = 0;
-	int cluster_id = topology_cluster_id(cpumask_first(policy->cpus));
+	int cluster_id = topology_physical_package_id(cpumask_first(policy->cpus));
 #endif
 
 	for_each_cpu(j, policy->cpus) {
@@ -830,9 +830,9 @@ static unsigned int waltgov_next_freq_shared(struct waltgov_cpu *wg_cpu, u64 tim
 		j_max = j_wg_cpu->max;
 #if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
 		j_util = waltgov_iowait_apply(j_wg_cpu, time, j_util, j_max);
-		if (unlikely(eas_opt_debug_enable))
-			trace_printk("[eas_opt]: enable_iowait_boost=%d, cpu:%d, max:%d, cpu->util:%d,iowait_util:%d\n",
-					sysctl_oplus_iowait_boost_enabled, j_wg_cpu->cpu, j_wg_cpu->max, j_wg_cpu->util, j_util);
+		//if (unlikely(eas_opt_debug_enable))
+			//trace_printk("[eas_opt]: enable_iowait_boost=%d, cpu:%d, max:%d, cpu->util:%d,iowait_util:%d\n",
+					//sysctl_oplus_iowait_boost_enabled, j_wg_cpu->cpu, j_wg_cpu->max, j_wg_cpu->util, j_util);
 #endif
 		if (boost) {
 			j_util = mult_frac(j_util, boost + 100, 100);
@@ -860,11 +860,11 @@ static unsigned int waltgov_next_freq_shared(struct waltgov_cpu *wg_cpu, u64 tim
 		//util = avg_nr_running * util * oplus_cap_multiple[4] * 1024 / oplus_cap_multiple[cluster_id] >>  SCHED_CAPACITY_SHIFT;
 		util = (util_thresh < util) ?
 			(util_thresh + ((avg_nr_running * (util-util_thresh) * nr_oplus_cap_multiple[cluster_id]) >> SCHED_CAPACITY_SHIFT)) : util;
-		if (unlikely(eas_opt_debug_enable))
-			trace_printk("[eas_opt]: cluster_id: %d, capacity: %d, util_thresh: %d, util_orig: %d, util: %d, avg_nr_running: %d,"
-					"oplus_cap_multiple: %d,nr_oplus_cap_multiple: %d, util_thresh: %d\n",
-					cluster_id, max, util_thresh, util_orig, util, avg_nr_running, oplus_cap_multiple[cluster_id],
-					nr_oplus_cap_multiple[cluster_id], util_thresh_percent[cluster_id]);
+		//if (unlikely(eas_opt_debug_enable))
+			//trace_printk("[eas_opt]: cluster_id: %d, capacity: %d, util_thresh: %d, util_orig: %d, util: %d, avg_nr_running: %d,"
+					//"oplus_cap_multiple: %d,nr_oplus_cap_multiple: %d, util_thresh: %d\n",
+					//cluster_id, max, util_thresh, util_orig, util, avg_nr_running, oplus_cap_multiple[cluster_id],
+					//nr_oplus_cap_multiple[cluster_id], util_thresh_percent[cluster_id]);
 	}
 #endif
     return get_next_freq(wg_policy, util, max, wg_cpu, time);
@@ -1638,7 +1638,7 @@ static int waltgov_init(struct cpufreq_policy *policy)
 
 #ifdef CONFIG_OPLUS_FEATURE_SUGOV_TL
 	first_cpu = cpumask_first(policy->related_cpus);
-	cluster_id = topology_cluster_id(first_cpu);
+	cluster_id = topology_physical_package_id(first_cpu);
 	if (cluster_id < MAX_CLUSTERS)
 		init_flag[cluster_id] = 1;
 #endif /* CONFIG_OPLUS_FEATURE_SUGOV_TL */
@@ -1670,7 +1670,7 @@ static void waltgov_exit(struct cpufreq_policy *policy)
 	int cluster_id;
 
 	first_cpu = cpumask_first(policy->related_cpus);
-	cluster_id = topology_cluster_id(first_cpu);
+	cluster_id = topology_physical_package_id(first_cpu);
 	if (cluster_id < MAX_CLUSTERS)
 		init_flag[cluster_id] = 0;
 #endif /* CONFIG_OPLUS_FEATURE_SUGOV_TL */
