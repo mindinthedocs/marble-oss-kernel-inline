@@ -577,12 +577,12 @@ void android_rvh_find_lowest_rq_handler(void *unused, struct task_struct *p, str
 void android_rvh_sched_fork_handler(void *unused, struct task_struct *p);
 void android_rvh_enqueue_task_handler(void *unused, struct rq *rq, struct task_struct *p, int flags);
 void android_rvh_dequeue_task_handler(void *unused, struct rq *rq, struct task_struct *p, int flags);
-void android_rvh_schedule_handler(void *unused, unsigned int sched_mode, struct task_struct *prev, struct task_struct *next, struct rq *rq);
+void android_rvh_schedule_handler(void *unused, struct task_struct *prev, struct task_struct *next, struct rq *rq);
 void android_vh_scheduler_tick_handler(void *unused, struct rq *rq);
 
 #ifdef CONFIG_OPLUS_FEATURE_TICK_GRAN
 void android_vh_account_process_tick_gran_handler(void *unused, int user_tick, int *ticks);
-void sa_sched_switch_handler(void *unused, bool preempt, struct task_struct *prev, struct task_struct *next, unsigned int prev_state);
+void sa_sched_switch_handler(void *unused, bool preempt, struct task_struct *prev, struct task_struct *next);
 #endif
 
 /* register vendor hook in kernel/cgroup/cgroup-v1.c */

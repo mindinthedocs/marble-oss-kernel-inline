@@ -541,7 +541,7 @@ static int set_cluster_oplus_cap(int cluster_idx, int oplus_cap_multiple)
 
 	for_each_possible_cpu(cpu) {
 		cpu_topo = &cpu_topology[cpu];
-		if (cpu_topo->cluster_id == cluster_idx)
+		if (cpu_topo->package_id == cluster_idx)
 			cpumask_set_cpu(cpu, &cpus);
 	}
 

@@ -107,7 +107,7 @@ static DEFINE_RAW_SPINLOCK(freq_protect_lock);
 
 static atomic_t fbg_initialized = ATOMIC_INIT(0);
 
-__read_mostly int num_sched_clusters_frame_group_frame_group;
+__read_mostly int num_sched_clusters_frame_group;
 
 unsigned long ed_task_boost_mid_duration;
 unsigned long ed_task_boost_max_duration;
@@ -2754,7 +2754,7 @@ static void fbg_try_to_wake_up(void *unused, struct task_struct *p)
 }
 
 static void fbg_update_freq_hook(void *unused, bool preempt, struct task_struct *prev,
-	struct task_struct *next, unsigned int prev_state)
+	struct task_struct *next)
 {
 	u64 fbg_wall_clock = fbg_ktime_get_ns();
 	struct rq *rq = NULL;

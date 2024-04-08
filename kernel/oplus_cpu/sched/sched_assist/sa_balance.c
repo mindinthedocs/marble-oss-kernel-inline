@@ -461,7 +461,7 @@ static inline int migrate_degrades_locality(struct task_struct *p,
 }
 #endif
 
-const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
+const_debug unsigned int sysctl_sched_migration_cost_sab	= 500000UL;
 
 /*
  * Is this task likely cache-hot:
@@ -498,7 +498,7 @@ static int task_hot(struct task_struct *p, struct lb_env *env)
 			 &p->se == cfs_rq_of(&p->se)->last))
 		return 1;
 
-	if (sysctl_sched_migration_cost == -1)
+	if (sysctl_sched_migration_cost_sab == -1)
 		return 1;
 
 	/*
@@ -508,12 +508,12 @@ static int task_hot(struct task_struct *p, struct lb_env *env)
 	if (!sched_core_cookie_match(cpu_rq(env->dst_cpu), p))
 		return 1;
 
-	if (sysctl_sched_migration_cost == 0)
+	if (sysctl_sched_migration_cost_sab == 0)
 		return 0;
 
 	delta = rq_clock_task(env->src_rq) - p->se.exec_start;
 
-	return delta < (s64)sysctl_sched_migration_cost;
+	return delta < (s64)sysctl_sched_migration_cost_sab;
 }
 
 enum KTHREAD_BITS {
@@ -550,13 +550,13 @@ struct kthread {
  */
 static inline struct kthread *__to_kthread(struct task_struct *p)
 {
-	void *kthread = p->worker_private;
+	void *kthread = (__force void *)p->set_child_tid;
 	if (kthread && !(p->flags & PF_KTHREAD))
 		kthread = NULL;
 	return kthread;
 }
 
-bool kthread_is_per_cpu(struct task_struct *p)
+bool kthread_is_per_cpu_sab(struct task_struct *p)
 {
 	struct kthread *kthread = __to_kthread(p);
 	if (!kthread)
@@ -600,7 +600,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	 */
 
 	/* Disregard pcpu kthreads; they are where they need to be. */
-	if (kthread_is_per_cpu(p))
+	if (kthread_is_per_cpu_sab(p))
 		return 0;
 
 	if (!cpumask_test_cpu(env->dst_cpu, p->cpus_ptr)) {
@@ -642,7 +642,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	/* Record that we found at least one task that could run on dst_cpu */
 	env->flags &= ~LBF_ALL_PINNED;
 
-	if (task_on_cpu(env->src_rq, p)) {
+	if (task_running(env->src_rq, p)) {
 		/*
 		 * del by oplus.
 		 * schedstat_inc(p->se.statistics.nr_failed_migrations_running);

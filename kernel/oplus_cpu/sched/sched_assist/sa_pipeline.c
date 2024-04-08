@@ -476,12 +476,12 @@ static inline void pipeline_set_boost(bool boost)
 			cpu = policy.cpu;
 
 			cpu_topo = &cpu_topology[cpu];
-			if (cpu_topo->cluster_id == -1)
+			if (cpu_topo->package_id == -1)
 				continue;
 
-			oplus_core_ctl_set_cluster_boost(cpu_topo->cluster_id, boost);
+			oplus_core_ctl_set_cluster_boost(cpu_topo->package_id, boost);
 			printk("oplus_core_ctl_set_cluster_boost, cluster_id=%d, boost=%d\n",
-				cpu_topo->cluster_id, boost);
+				cpu_topo->package_id, boost);
 		}
 	}
 }

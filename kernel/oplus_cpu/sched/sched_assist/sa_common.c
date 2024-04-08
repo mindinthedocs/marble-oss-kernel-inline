@@ -1546,13 +1546,13 @@ void android_vh_account_process_tick_gran_handler(void *unused, int user_tick, i
 	}
 }
 
-void sa_sched_switch_handler(void *unused, bool preempt, struct task_struct *prev, struct task_struct *next, unsigned int prev_state)
+void sa_sched_switch_handler(void *unused, bool preempt, struct task_struct *prev, struct task_struct *next)
 {
 	if (unlikely(global_debug_enabled & DEBUG_SYSTRACE))
 		nopreempt_state_systrace_c(smp_processor_id(), 0);
 
 	if (unlikely(global_debug_enabled & DEBUG_AMU_INSTRUCTION)) {
-		if (!preempt && prev_state)
+		if (!preempt)
 			per_cpu(nvcsw, smp_processor_id())++;
 		else
 			per_cpu(nivcsw, smp_processor_id())++;
@@ -1560,7 +1560,7 @@ void sa_sched_switch_handler(void *unused, bool preempt, struct task_struct *pre
 }
 #endif
 
-void android_rvh_schedule_handler(void *unused, unsigned int sched_mode, struct task_struct *prev, struct task_struct *next, struct rq *rq)
+void android_rvh_schedule_handler(void *unused, struct task_struct *prev, struct task_struct *next, struct rq *rq)
 {
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_CPU_JANKINFO)
 	jankinfo_android_rvh_schedule_handler(unused, prev, next, rq);

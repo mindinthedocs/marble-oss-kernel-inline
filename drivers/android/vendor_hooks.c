@@ -525,6 +525,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_update_thermal_stats);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_rvh_set_cpus_allowed_by_task);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_update_topology_flags_workfn);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_exit_signal);
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_account_process_tick_gran);
 /*
  * For type visibility
  */

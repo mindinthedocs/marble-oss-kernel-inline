@@ -84,7 +84,7 @@ unsigned int sysctl_ed_boost_pct;
 unsigned int sysctl_em_inflate_pct = 100;
 unsigned int sysctl_em_inflate_thres = 1024;
 unsigned int sysctl_sched_heavy_nr;
-unsigned int sysctl_max_freq_partial_halt = FREQ_QOS_MAX_DEFAULT_VALUE;
+unsigned int sysctl_max_freq_partial_halt = 1190400;
 unsigned int sysctl_fmax_cap[MAX_CLUSTERS];
 unsigned int sysctl_sched_sbt_pause_cpus;
 unsigned int sysctl_sched_sbt_enable = 1;

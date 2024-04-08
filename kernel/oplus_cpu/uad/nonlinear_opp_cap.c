@@ -205,7 +205,7 @@ static void uag_choose_multi_util(struct uag_gov_policy *sg_policy, unsigned lon
 }
 #endif
 
-void update_util_tl(struct uag_gov_policy *sg_policy, unsigned long *util)
+static void update_util_tl(struct uag_gov_policy *sg_policy, unsigned long *util)
 {
 	unsigned long target_util;
 
@@ -380,13 +380,13 @@ static void sched_get_possible_siblings(int cpuid, struct cpumask *cluster_cpus)
 	int cpu;
 	struct cpu_topology *cpu_topo, *cpuid_topo = &cpu_topology[cpuid];
 
-	if (cpuid_topo->cluster_id == -1)
+	if (cpuid_topo->package_id == -1)
 		return;
 
 	for_each_possible_cpu(cpu) {
 		cpu_topo = &cpu_topology[cpu];
 
-		if (cpuid_topo->cluster_id != cpu_topo->cluster_id)
+		if (cpuid_topo->package_id != cpu_topo->package_id)
 			continue;
 		cpumask_set_cpu(cpu, cluster_cpus);
 	}
