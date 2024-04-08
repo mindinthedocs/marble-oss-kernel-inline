@@ -9,6 +9,15 @@
 #include <walt.h>
 #include "trace.h"
 
+#ifdef CONFIG_OPLUS_ADD_CORE_CTRL_MASK
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+#include <../kernel/oplus_cpu/sched/frame_boost/frame_group.h>
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include <../kernel/oplus_cpu/sched/sched_assist/sa_fair.h>
+#endif
+#endif /* CONFIG_OPLUS_ADD_CORE_CTRL_MASK */
+
 extern int select_fallback_rq(int cpu, struct task_struct *p);
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -543,12 +552,21 @@ static void android_rvh_get_nohz_timer_target(void *unused, int *cpu, bool *done
 	 * affecting externally halted cpus.
 	 */
 	if (!cpumask_andnot(&unhalted, cpu_active_mask, cpu_halt_mask)) {
-		if (cpumask_weight(&cpus_paused_by_us))
-			*cpu = cpumask_first(&cpus_paused_by_us);
-		else
-			*cpu = cpumask_first(cpu_halt_mask);
+		cpumask_t tmp_pause, tmp_part_pause, tmp_halt, *tmp;
 
-		return;
+		cpumask_and(&tmp_part_pause, cpu_active_mask, &cpus_part_paused_by_us);
+		cpumask_and(&tmp_pause, cpu_active_mask, &cpus_paused_by_us);
+		cpumask_and(&tmp_halt, cpu_active_mask, cpu_halt_mask);
+		tmp = cpumask_weight(&tmp_part_pause) ? &tmp_part_pause :
+			cpumask_weight(&tmp_pause) ? &tmp_pause : &tmp_halt;
+
+		for_each_cpu(i, tmp) {
+			if ((*cpu == i) && cpumask_weight(tmp) > 1)
+				continue;
+
+			*cpu = i;
+			return;
+		}
 	}
 
 	rcu_read_lock();
@@ -707,6 +725,16 @@ void walt_halt_init(void)
 	}
 
 	sched_setscheduler_nocheck(walt_drain_thread, SCHED_FIFO, &param);
+
+#ifdef CONFIG_OPLUS_ADD_CORE_CTRL_MASK
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+	init_fbg_halt_mask(&__cpu_halt_mask);
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	init_ux_halt_mask(&__cpu_halt_mask);
+#endif
+#endif /* CONFIG_OPLUS_ADD_CORE_CTRL_MASK */
 
 	register_trace_android_rvh_get_nohz_timer_target(android_rvh_get_nohz_timer_target, NULL);
 	register_trace_android_rvh_set_cpus_allowed_by_task(
