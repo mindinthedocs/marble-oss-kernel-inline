@@ -2430,7 +2430,7 @@ int push_cpu_stop(void *arg)
 	struct task_struct *p = arg;
 
 	raw_spin_lock_irq(&p->pi_lock);
-	raw_spin_lock(&rq->lock);
+	raw_spin_rq_lock(rq);
 
 	if (task_rq(p) != rq)
 		goto out_unlock;
@@ -2460,7 +2460,7 @@ int push_cpu_stop(void *arg)
 
 out_unlock:
 	rq->push_busy = false;
-	raw_spin_unlock(&rq->lock);
+	raw_spin_rq_unlock(rq);
 	raw_spin_unlock_irq(&p->pi_lock);
 
 	put_task_struct(p);
@@ -8555,7 +8555,7 @@ static void balance_push(struct rq *rq)
 {
 	struct task_struct *push_task = rq->curr;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_rq_held(rq);
 	SCHED_WARN_ON(rq->cpu != smp_processor_id());
 	/*
 	 * Ensure the thing is persistent until balance_push_set(.on = false);
@@ -8582,7 +8582,7 @@ static void balance_push(struct rq *rq)
 		    rcuwait_active(&rq->hotplug_wait)) {
 			raw_spin_unlock(&rq->lock);
 			rcuwait_wake_up(&rq->hotplug_wait);
-			raw_spin_lock(&rq->lock);
+			raw_spin_rq_lock(rq);
 		}
 		return;
 	}
@@ -8600,7 +8600,7 @@ static void balance_push(struct rq *rq)
 	 * schedule(). The next pick is obviously going to be the stop task
 	 * which is_per_cpu_kthread() and will push this task away.
 	 */
-	raw_spin_lock(&rq->lock);
+	raw_spin_rq_lock(rq);
 }
 
 static void balance_push_set(int cpu, bool on)

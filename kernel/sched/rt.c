@@ -2037,7 +2037,7 @@ retry:
 			raw_spin_unlock(&rq->lock);
 			stop_one_cpu_nowait(rq->cpu, push_cpu_stop,
 					    push_task, &rq->push_work);
-			raw_spin_lock(&rq->lock);
+			raw_spin_rq_lock(rq);
 		}
 
 		return 0;

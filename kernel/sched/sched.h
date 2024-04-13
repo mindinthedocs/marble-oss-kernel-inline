@@ -2271,7 +2271,7 @@ static inline struct task_struct *get_push_task(struct rq *rq)
 {
 	struct task_struct *p = rq->curr;
 
-	lockdep_assert_held(&rq->lock);
+	lockdep_assert_rq_held(rq);
 
 	if (rq->push_busy)
 		return NULL;
