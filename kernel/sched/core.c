@@ -9038,8 +9038,9 @@ static void balance_push_set(int cpu, bool on)
 	if (on) {
 		WARN_ON_ONCE(rq->balance_callback);
 		rq->balance_callback = &balance_push_callback;
-	else
+	} else if (rq->balance_callback == &balance_push_callback) {
 		rq->balance_callback = NULL;
+	}
 	rq_unlock_irqrestore(rq, &rf);
 }
 
