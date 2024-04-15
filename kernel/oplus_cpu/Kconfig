@@ -7,3 +7,5 @@ source "kernel/oplus_cpu/sched/Kconfig"
 source "kernel/oplus_cpu/cpufreq_bouncing/Kconfig"
 
 source "kernel/oplus_cpu/oplus_omrg/Kconfig"
+
+source "kernel/oplus_cpu/synchronize/Kconfig"
