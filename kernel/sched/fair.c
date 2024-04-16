@@ -4957,8 +4957,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		update_idle_cfs_rq_clock_pelt(cfs_rq);
 }
 
-static void
-set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+void set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 	clear_buddies(cfs_rq, se);
 
@@ -7578,9 +7577,6 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 
 	cfs_rq = cfs_rq_of(se);
 	update_curr(cfs_rq);
-	trace_android_rvh_check_preempt_wakeup(rq, p, &preempt, &nopreempt,
-    			wake_flags, se, pse, next_buddy_marked, sysctl_sched_wakeup_granularity);
-
 
 	trace_android_rvh_check_preempt_wakeup(rq, p, &preempt, &ignore,
 				wake_flags, se, pse, next_buddy_marked);
