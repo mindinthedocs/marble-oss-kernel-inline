@@ -943,14 +943,7 @@ int sched_update_scaling(void)
 
 	return 0;
 }
-
-long calc_latency_offset(int prio)
-{
-	u32 weight = sched_prio_to_weight[prio];
-	u64 base = sysctl_sched_min_granularity;
-
-	return div_u64(base << SCHED_FIXEDPOINT_SHIFT, weight);
-}
+#endif
 
 static void clear_buddies(struct cfs_rq *cfs_rq, struct sched_entity *se);
 
@@ -1265,9 +1258,10 @@ update_stats_dequeue_fair(struct cfs_rq *cfs_rq, struct sched_entity *se, int fl
 
 	if ((flags & DEQUEUE_SLEEP) && entity_is_task(se)) {
 		struct task_struct *tsk = task_of(se);
+		unsigned int state;
 
 		/* XXX racy against TTWU */
-		state = READ_ONCE(tsk->__state);
+		state = READ_ONCE(tsk->state);
 		if (state & TASK_INTERRUPTIBLE)
 			__schedstat_set(tsk->stats.sleep_start,
 				      rq_clock(rq_of(cfs_rq)));

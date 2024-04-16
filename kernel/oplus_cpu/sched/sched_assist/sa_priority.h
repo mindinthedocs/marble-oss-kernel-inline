@@ -34,5 +34,5 @@ void update_ux_timeline_task_removal(struct oplus_rq *orq, struct oplus_task_str
 bool need_resched_ux(struct oplus_rq *orq, struct oplus_task_struct *curr, unsigned long delta_exec);
 bool need_wakeup_preempt(struct oplus_rq *orq, struct oplus_task_struct *curr);
 
-void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *tsk, u64 runtime, u64 vruntime);
+void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *tsk, u64 runtime);
 #endif /* _OPLUS_SA_PRIORITY_H_ */

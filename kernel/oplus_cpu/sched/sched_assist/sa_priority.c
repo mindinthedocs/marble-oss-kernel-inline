@@ -503,7 +503,7 @@ bool need_wakeup_preempt(struct oplus_rq *orq, struct oplus_task_struct *curr)
 	return (vdiff > ux_wakeup_gran_vtime);
 }
 
-void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *task, u64 delta, u64 vruntime)
+void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *task, u64 delta)
 {
 	struct rq *rq;
 	struct oplus_rq *orq;

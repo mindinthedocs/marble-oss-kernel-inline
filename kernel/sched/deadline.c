@@ -369,10 +369,10 @@ static void task_non_contending(struct sched_dl_entity *dl_se)
 			if (dl_task(p))
 				sub_running_bw(dl_se, dl_rq);
 
-			if (!dl_task(p) || READ_ONCE(p->__state) == TASK_DEAD) {
+			if (!dl_task(p) || READ_ONCE(p->state) == TASK_DEAD) {
 				struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
 
-				if (READ_ONCE(p->__state) == TASK_DEAD)
+				if (READ_ONCE(p->state) == TASK_DEAD)
 					sub_rq_bw(dl_se, &rq->dl);
 				raw_spin_lock(&dl_b->lock);
 				__dl_sub(dl_b, dl_se->dl_bw, dl_bw_cpus(task_cpu(p)));
@@ -1427,7 +1427,7 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
 	if (dl_server(dl_se))
 		goto no_task;
 
-	if (!dl_task(p) || READ_ONCE(p->__state) == TASK_DEAD) {
+	if (!dl_task(p) || READ_ONCE(p->state) == TASK_DEAD) {
 		struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
 
 		if (p->state == TASK_DEAD && dl_se->dl_non_contending) {

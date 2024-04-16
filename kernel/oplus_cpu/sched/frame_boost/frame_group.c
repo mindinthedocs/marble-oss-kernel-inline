@@ -1916,7 +1916,7 @@ skip:
 }
 
 static void fbg_update_cfs_util_hook(void *unused, struct task_struct *tsk,
-	u64 runtime, u64 vruntime)
+	u64 runtime)
 {
 	fbg_update_task_util(tsk, runtime, true);
 }

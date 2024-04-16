@@ -466,7 +466,9 @@ void android_vh_alter_futex_plist_add_handler(void *unused, struct plist_node *n
 
 	rq = task_rq_lock(first_normal_waiter, &rf);
 	se = &first_normal_waiter->se;
-	sleep_start = schedstat_val(se->statistics.sleep_start);
+	struct sched_statistics *stats;
+	stats = __schedstats_from_se(se);
+	sleep_start = schedstat_val(stats->sleep_start);
 
 	if (sleep_start) {
 		u64 delta = rq_clock(rq) - sleep_start;
