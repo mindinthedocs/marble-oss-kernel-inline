@@ -1,7 +1,7 @@
 #
 # Goodix touchscreen driver configuration
 #
-menuconfig TOUCHSCREEN_GOODIX_BRL_9916
+config TOUCHSCREEN_GOODIX_BRL_9916R
 	tristate "Goodix berlin touchscreen"
 	default n
 	help
@@ -9,16 +9,3 @@ menuconfig TOUCHSCREEN_GOODIX_BRL_9916
 	  to your system.
 	  If build module, say M.
 	  If unsure, say N.
-
-if TOUCHSCREEN_GOODIX_BRL_9916
-
-config TOUCHSCREEN_GOODIX_BRL_9916_SPI
-	bool "support SPI bus connection"
-	default y
-	help
-		Say Y here if the touchscreen is connected via SPI bus.
-
-config TOUCHSCREEN_GOODIX_BRL_9916_DEBUG
-	bool "Debug"
-
-endif

@@ -1,22 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0
-/*
- * Goodix Touchscreen Driver
- * Copyright (C) 2020 - 2021 Goodix, Inc.
- *
- * Copyright (C) 2022 XiaoMi, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be a reference
- * to you, when you are integrating the GOODiX's CTP IC into your system,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- */
+ /*
+  * Goodix Touchscreen Driver
+  * Copyright (C) 2020 - 2021 Goodix, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; either version 2 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be a reference
+  * to you, when you are integrating the GOODiX's CTP IC into your system,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  * General Public License for more details.
+  *
+  */
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/atomic.h>
@@ -101,8 +98,10 @@ static int async_read(struct goodix_tools_dev *dev, void __user *arg)
 		return -EINVAL;
 	}
 	databuf = kzalloc(length, GFP_KERNEL);
-	if (!databuf)
+	if (!databuf) {
+		ts_err("Alloc memory failed");
 		return -ENOMEM;
+	}
 
 	if (hw_ops->read(dev->ts_core, reg_addr, databuf, length)) {
 		ret = -EBUSY;
@@ -144,8 +143,10 @@ static int read_config_data(struct goodix_ts_core *ts_core, void __user *arg)
 		return -EINVAL;
 	}
 	tmp_buf = kzalloc(length, GFP_KERNEL);
-	if (!tmp_buf)
+	if (!tmp_buf) {
+		ts_err("failed alloc memory");
 		return -ENOMEM;
+	}
 	/* if reg_addr == 0, read config data with specific flow */
 	if (!reg_addr) {
 		if (ts_core->hw_ops->read_config)
@@ -197,8 +198,10 @@ static int async_write(struct goodix_tools_dev *dev, void __user *arg)
 	}
 
 	databuf = kzalloc(length, GFP_KERNEL);
-	if (!databuf)
+	if (!databuf) {
+		ts_err("Alloc memory failed");
 		return -ENOMEM;
+	}
 	ret = copy_from_user(databuf, (u8 *)arg + I2C_MSG_HEAD_LEN, length);
 	if (ret) {
 		ret = -EFAULT;
@@ -310,6 +313,7 @@ static long goodix_tools_ioctl(struct file *filp, unsigned int cmd,
 	case GTP_SEND_CONFIG:
 		temp_cfg = kzalloc(sizeof(struct goodix_ic_config), GFP_KERNEL);
 		if (temp_cfg == NULL) {
+			ts_err("Memory allco err");
 			ret = -ENOMEM;
 			goto err_out;
 		}
@@ -426,7 +430,6 @@ static int goodix_tools_module_exit(struct goodix_ts_core *core_data,
 		struct goodix_ext_module *module)
 {
 	struct goodix_tools_dev *tools_dev = module->priv_data;
-
 	ts_debug("tools module unregister");
 	if (atomic_read(&tools_dev->in_use)) {
 		ts_err("tools module busy, please close it then retry");
@@ -466,8 +469,10 @@ int goodix_tools_init(void)
 	int ret;
 
 	goodix_tools_dev = kzalloc(sizeof(struct goodix_tools_dev), GFP_KERNEL);
-	if (goodix_tools_dev == NULL)
+	if (goodix_tools_dev == NULL) {
+		ts_err("Memory allco err");
 		return -ENOMEM;
+	}
 
 	INIT_LIST_HEAD(&goodix_tools_dev->head);
 	goodix_tools_dev->ops_mode = 0;

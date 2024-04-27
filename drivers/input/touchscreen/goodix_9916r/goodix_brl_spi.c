@@ -1,37 +1,31 @@
-// SPDX-License-Identifier: GPL-2.0
-/*
- * Goodix Touchscreen Driver
- * Copyright (C) 2020 - 2021 Goodix, Inc.
- *
- * Copyright (C) 2022 XiaoMi, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be a reference
- * to you, when you are integrating the GOODiX's CTP IC into your system,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- */
+ /*
+  * Goodix Touchscreen Driver
+  * Copyright (C) 2020 - 2021 Goodix, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; either version 2 of the License, or
+  * (at your option) any later version.
+  *
+  * This program is distributed in the hope that it will be a reference
+  * to you, when you are integrating the GOODiX's CTP IC into your system,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  * General Public License for more details.
+  *
+  */
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/spi/spi.h>
-#include <drm/drm_panel.h>
-#include <linux/list.h>
-#include <linux/of.h>
-#include <linux/of_gpio.h>
-#include <linux/err.h>
+
 #include "goodix_ts_core.h"
 #define TS_DRIVER_NAME		"gtx8_spi"
 
 #define SPI_TRANS_PREFIX_LEN    1
 #define REGISTER_WIDTH          4
 #define SPI_READ_DUMMY_LEN      4
-#define SPI_READ_PREFIX_LEN  (SPI_TRANS_PREFIX_LEN + REGISTER_WIDTH + SPI_READ_DUMMY_LEN)
+#define SPI_READ_PREFIX_LEN  \
+		(SPI_TRANS_PREFIX_LEN + REGISTER_WIDTH + SPI_READ_DUMMY_LEN)
 #define SPI_WRITE_PREFIX_LEN (SPI_TRANS_PREFIX_LEN + REGISTER_WIDTH)
 
 #define SPI_WRITE_FLAG  0xF0
@@ -40,7 +34,8 @@
 static struct platform_device *goodix_pdev;
 struct goodix_bus_interface goodix_spi_bus;
 struct device *global_spi_parent_device;
-/*
+
+/**
  * goodix_spi_read_bra- read device register through spi bus
  * @dev: pointer to device data
  * @addr: register address
@@ -195,28 +190,32 @@ static void goodix_pdev_release(struct device *dev)
 	kfree(goodix_pdev);
 }
 
+struct device_node *gf_spi_dp;
+
 static int goodix_spi_probe(struct spi_device *spi)
 {
 	int ret = 0;
+	struct device_node *dp = spi->dev.of_node;
 
 	ts_info("goodix spi probe in");
 
 	/* init spi_device */
-	spi->mode = SPI_MODE_0;
-	spi->bits_per_word = 8;
+	spi->mode            = SPI_MODE_0;
+	spi->bits_per_word   = 8;
 
+	ts_info("spi_info: speed[%d] mode[%d] bits_per_word[%d]",
+			spi->max_speed_hz, spi->mode, spi->bits_per_word);
 	ret = spi_setup(spi);
+
 	if (ret) {
 		ts_err("failed set spi mode, %d", ret);
 		return ret;
 	}
 
 	/* get ic type */
-	ret = goodix_get_ic_type(spi->dev.of_node);
+	ret = goodix_get_ic_type(spi->dev.of_node, &goodix_spi_bus);
 	if (ret < 0)
 		return ret;
-
-	goodix_spi_bus.ic_type = ret;
 	goodix_spi_bus.bus_type = GOODIX_BUS_TYPE_SPI;
 	goodix_spi_bus.dev = &spi->dev;
 	if (goodix_spi_bus.ic_type == IC_TYPE_BERLIN_A)
@@ -235,7 +234,7 @@ static int goodix_spi_probe(struct spi_device *spi)
 	goodix_pdev->num_resources = 0;
 	/*
 	 * you can find this platform dev in
-	 * /sys/devices/platform/goodix_ts.0
+	 * /sys/devices/platfrom/goodix_ts.0
 	 * goodix_pdev->dev.parent = &client->dev;
 	 */
 	goodix_pdev->dev.platform_data = &goodix_spi_bus;
@@ -245,10 +244,14 @@ static int goodix_spi_probe(struct spi_device *spi)
 	 * module will probe the touch deivce.
 	 */
 	ret = platform_device_register(goodix_pdev);
+
 	if (ret) {
 		ts_err("failed register goodix platform device, %d", ret);
 		goto err_pdev;
 	}
+
+	gf_spi_dp = dp;
+
 	ts_info("spi probe out");
 	return 0;
 
@@ -267,6 +270,9 @@ static int goodix_spi_remove(struct spi_device *spi)
 
 #ifdef CONFIG_OF
 static const struct of_device_id spi_matchs[] = {
+	/*{.compatible = "goodix,brl-a",},
+	{.compatible = "goodix,brl-b",},
+	{.compatible = "goodix,brl-d",},*/
 	{.compatible = "goodix,9916r-spi",},
 	{},
 };
@@ -280,6 +286,7 @@ static const struct spi_device_id spi_id_table[] = {
 static struct spi_driver goodix_spi_driver = {
 	.driver = {
 		.name = TS_DRIVER_NAME,
+		//.owner = THIS_MODULE,
 		.of_match_table = spi_matchs,
 	},
 	.id_table = spi_id_table,

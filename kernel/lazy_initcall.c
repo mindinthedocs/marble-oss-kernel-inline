@@ -140,6 +140,12 @@ static const __initconst char * const blacklist[] = {
         "xlogchar",
         "perf_helper",
         "hung_task_enh",
+        "xiaomi_touch",
+        "synaptics_dsx",
+        "mi_thermal_interface",
+        "gt9916r",
+        "qca_cld3_qca6490",
+        "mi_cnss_statistic",
 	NULL
 };
 
