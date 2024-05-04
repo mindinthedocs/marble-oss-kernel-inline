@@ -63,6 +63,7 @@ LINUX_INC +=	-Iinclude/linux \
 LINUX_INC +=	-I$(DISPLAY_ROOT) \
 	-I$(DISPLAY_ROOT)/include \
 	-I$(KERNEL_ROOT)/drivers/clk/qcom \
+	-I$(KERNEL_SRC)/drivers/clk/qcom \
 	-I$(DISPLAY_ROOT)/include/linux \
 	-I$(DISPLAY_ROOT)/rotator \
 	-I$(DISPLAY_ROOT)/msm \
