@@ -146,6 +146,7 @@ static const __initconst char * const blacklist[] = {
         "gt9916r",
         "qca_cld3_qca6490",
         "mi_cnss_statistic",
+        "goodix_core",
 	NULL
 };
 
