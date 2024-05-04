@@ -32,6 +32,10 @@
 #define CAM_OIS_NAME       "cam-ois"
 #define CAM_TPG_NAME       "cam-tpg"
 
+#if IS_ENABLED(CONFIG_ISPV3)
+#define CAM_ISPV3_NAME	   "cam-ispv3"
+#endif
+
 #define MAX_SYSTEM_PIPELINE_DELAY 2
 
 #define CAM_PKT_NOP_OPCODE 127
@@ -107,6 +111,12 @@ enum msm_camera_power_seq_type {
 	SENSOR_CUSTOM_GPIO1,
 	SENSOR_CUSTOM_GPIO2,
 	SENSOR_VANA1,
+#ifdef CONFIG_WL2866D
+	SENSOR_WL2866D_DVDD1, //13
+	SENSOR_WL2866D_DVDD2,
+	SENSOR_WL2866D_AVDD1,
+	SENSOR_WL2866D_AVDD2,
+#endif
 	SENSOR_SEQ_TYPE_MAX,
 };
 
@@ -333,6 +343,7 @@ enum msm_camera_vreg_name_t {
 	CAM_VAF,
 	CAM_V_CUSTOM1,
 	CAM_V_CUSTOM2,
+	CAM_CLK,
 	CAM_VREG_MAX,
 };
 

@@ -59,6 +59,13 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 			goto release_mutex;
 		}
 
+#if IS_ENABLED(CONFIG_ISPV3)
+		if (flash_acq_dev.reserved)
+			fctrl->trigger_source = CAM_REQ_MGR_TRIG_SRC_EXTERNAL;
+		else
+			fctrl->trigger_source = CAM_REQ_MGR_TRIG_SRC_INTERNAL;
+#endif
+
 		bridge_params.session_hdl = flash_acq_dev.session_handle;
 		bridge_params.ops = &fctrl->bridge_intf.ops;
 		bridge_params.v4l2_sub_dev_flag = 0;
@@ -77,6 +84,14 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 			flash_acq_dev.device_handle;
 		fctrl->bridge_intf.session_hdl =
 			flash_acq_dev.session_handle;
+		fctrl->apply_streamoff = false;
+
+#if IS_ENABLED(CONFIG_ISPV3)
+		CAM_DBG(CAM_FLASH, "Device Handle: %d trigger_source: %s",
+			flash_acq_dev.device_handle,
+			(fctrl->trigger_source == CAM_REQ_MGR_TRIG_SRC_INTERNAL) ?
+			"internal" : "external");
+#endif
 
 		rc = copy_to_user(u64_to_user_ptr(cmd->handle),
 			&flash_acq_dev,
@@ -86,6 +101,10 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 				rc);
 			rc = -EFAULT;
 			goto release_mutex;
+		}
+		if (fctrl->func_tbl.power_ops == cam_flash_pmic_power_ops) {
+			if (fctrl->func_tbl.power_ops(fctrl, true))
+				CAM_WARN(CAM_FLASH, "Power up Failed");
 		}
 		fctrl->flash_state = CAM_FLASH_STATE_ACQUIRE;
 
@@ -135,6 +154,7 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 				CAM_WARN(CAM_FLASH, "Power Down Failed");
 		}
 
+		fctrl->streamoff_count = 0;
 		fctrl->flash_state = CAM_FLASH_STATE_INIT;
 		break;
 	}
@@ -160,6 +180,7 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 			rc = -EFAULT;
 			goto release_mutex;
 		}
+		fctrl->apply_streamoff = false;
 		break;
 	}
 
@@ -204,6 +225,7 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 			goto release_mutex;
 		}
 
+		fctrl->apply_streamoff = false;
 		fctrl->flash_state = CAM_FLASH_STATE_START;
 		break;
 	}
@@ -522,6 +544,7 @@ static int cam_flash_component_bind(struct device *dev,
 
 		INIT_LIST_HEAD(&(fctrl->i2c_data.init_settings.list_head));
 		INIT_LIST_HEAD(&(fctrl->i2c_data.config_settings.list_head));
+		INIT_LIST_HEAD(&(fctrl->i2c_data.streamoff_settings.list_head));
 		for (i = 0; i < MAX_PER_FRAME_ARRAY; i++)
 			INIT_LIST_HEAD(
 				&(fctrl->i2c_data.per_frame[i].list_head));
@@ -550,6 +573,11 @@ static int cam_flash_component_bind(struct device *dev,
 		fctrl->func_tbl.parser = cam_flash_pmic_pkt_parser;
 		fctrl->func_tbl.apply_setting = cam_flash_pmic_apply_setting;
 		fctrl->func_tbl.power_ops = NULL;
+#if IS_REACHABLE(CONFIG_LEDS_QPNP_FLASH_V2)
+		CAM_DBG(CAM_FLASH, "PMIC power_ops");
+		fctrl->is_regulator_enabled = false;
+		fctrl->func_tbl.power_ops = cam_flash_pmic_power_ops;
+#endif
 		fctrl->func_tbl.flush_req = cam_flash_pmic_flush_request;
 	}
 
@@ -725,11 +753,13 @@ static int cam_flash_i2c_component_bind(struct device *dev,
 
 	INIT_LIST_HEAD(&(fctrl->i2c_data.init_settings.list_head));
 	INIT_LIST_HEAD(&(fctrl->i2c_data.config_settings.list_head));
+	INIT_LIST_HEAD(&(fctrl->i2c_data.streamoff_settings.list_head));
 	for (i = 0; i < MAX_PER_FRAME_ARRAY; i++)
 		INIT_LIST_HEAD(&(fctrl->i2c_data.per_frame[i].list_head));
 
 	fctrl->func_tbl.parser = cam_flash_i2c_pkt_parser;
 	fctrl->func_tbl.apply_setting = cam_flash_i2c_apply_setting;
+	fctrl->is_regulator_enabled = false;
 	fctrl->func_tbl.power_ops = cam_flash_i2c_power_ops;
 	fctrl->func_tbl.flush_req = cam_flash_i2c_flush_request;
 
