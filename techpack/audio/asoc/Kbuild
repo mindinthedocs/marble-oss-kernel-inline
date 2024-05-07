@@ -251,7 +251,7 @@ ifneq (,$(filter $(TARGET_PRODUCT), diting))
 	CDEFINES += -DCONFIG_TARGET_PRODUCT_DITING
 endif
 
-ifneq (,$(filter $(TARGET_PRODUCT), mondrian))
+ifeq (1,1)
 	CDEFINES += -DCONFIG_TARGET_PRODUCT_MONDRIAN
 endif
 

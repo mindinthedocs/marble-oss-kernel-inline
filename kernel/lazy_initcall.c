@@ -144,9 +144,11 @@ static const __initconst char * const blacklist[] = {
         "synaptics_dsx",
         "mi_thermal_interface",
         "gt9916r",
-        "gt9916",
         "qca_cld3_qca6490",
         "mi_cnss_statistic",
+        "plh_scmi",
+        "gplaf_scmi",
+        "shared_rail_scmi",
         "goodix_core",
 	NULL
 };
