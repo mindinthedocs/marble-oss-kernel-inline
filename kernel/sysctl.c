@@ -71,6 +71,7 @@
 #include <linux/coredump.h>
 #include <linux/latencytop.h>
 #include <linux/pid.h>
+#include <linux/sysfs.h>
 
 #include "../lib/kstrtox.h"
 
@@ -3538,6 +3539,616 @@ static struct ctl_table debug_table[] = {
 	{ }
 };
 
+//SCHED_WALT dummy entries
+#ifndef CONFIG_SCHED_BORE
+static int three = 3;
+#endif
+static int neg_three = -3;
+static int two_hundred_fifty_five = 255;
+static unsigned int ns_per_sec = NSEC_PER_SEC;
+static unsigned int one_hundred_thousand = 100000;
+static unsigned int two_hundred_million = 200000000;
+static int __maybe_unused two = 2;
+static int __maybe_unused four = 4;
+static int one_hundred = 100;
+static int one_thousand = 1000;
+static unsigned int min_cfs_boost_prio = 99;
+static unsigned int max_cfs_boost_prio = 119;
+unsigned int sysctl_sched_capacity_margin_up_pct[2];
+unsigned int sysctl_sched_capacity_margin_dn_pct[2];
+unsigned int sysctl_sched_busy_hyst_enable_cpus;
+unsigned int sysctl_sched_busy_hyst;
+unsigned int sysctl_sched_coloc_busy_hyst_enable_cpus;
+unsigned int sysctl_sched_coloc_busy_hyst_cpu[8];
+unsigned int sysctl_sched_coloc_busy_hyst_max_ms;
+unsigned int sysctl_sched_coloc_busy_hyst_cpu_busy_pct[8];
+unsigned int sysctl_sched_util_busy_hyst_enable_cpus;
+unsigned int sysctl_sched_util_busy_hyst_cpu[8];
+unsigned int sysctl_sched_util_busy_hyst_cpu_util[8];
+unsigned int sysctl_sched_boost;
+unsigned int sysctl_sched_wake_up_idle[2];
+unsigned int sysctl_input_boost_ms;
+unsigned int sysctl_input_boost_freq[8];
+unsigned int sysctl_sched_boost_on_input;
+int sysctl_cluster_arr[3][15];
+/* sysctl nodes accesed by other files */
+unsigned int __read_mostly sysctl_sched_coloc_downmigrate_ns;
+unsigned int __read_mostly sysctl_sched_group_downmigrate_pct;
+unsigned int __read_mostly sysctl_sched_group_upmigrate_pct;
+unsigned int __read_mostly sysctl_sched_window_stats_policy;
+unsigned int sysctl_sched_ravg_window_nr_ticks;
+unsigned int sysctl_sched_walt_rotate_big_tasks;
+unsigned int sysctl_sched_task_unfilter_period;
+unsigned int __read_mostly sysctl_sched_asym_cap_sibling_freq_match_pct;
+unsigned int sysctl_walt_low_latency_task_threshold; /* disabled by default */
+unsigned int sysctl_sched_conservative_pl;
+unsigned int sysctl_sched_min_task_util_for_boost = 51;
+unsigned int sysctl_sched_min_task_util_for_uclamp = 51;
+unsigned int sysctl_sched_min_task_util_for_colocation = 35;
+unsigned int sysctl_sched_many_wakeup_threshold = 1000;
+const int sched_user_hint_max = 1000;
+unsigned int sysctl_walt_rtg_cfs_boost_prio = 99; /* disabled by default */
+unsigned int sysctl_sched_sync_hint_enable = 1;
+unsigned int sysctl_sched_bug_on_rt_throttle;
+unsigned int sysctl_panic_on_walt_bug;
+unsigned int sysctl_sched_suppress_region2;
+unsigned int sysctl_sched_skip_sp_newly_idle_lb = 1;
+unsigned int sysctl_sched_hyst_min_coloc_ns = 80000000;
+unsigned int sysctl_sched_asymcap_boost;
+static int sysctl_task_read_pid = 1;
+unsigned int sysctl_sched_dynamic_tp_enable;
+__read_mostly unsigned int sysctl_sched_force_lb_enable = 1;
+unsigned int sched_lib_mask_force;
+char sched_lib_name[512];
+unsigned int sysctl_sched_user_hint;
+struct cluster_freq_relation {
+	int src_freq_scale;
+	int dst_cpu;
+	int tgt_freq_scale;
+};
+struct cluster_freq_relation cluster_arr[3][5];
+
+static unsigned int dummy_wake_up_idle[2];
+static unsigned int dummy_init_task_load[2];
+static unsigned int dummy_group_id[2];
+static unsigned int dummy_per_task_boost[2];
+static unsigned int dummy_per_task_boost_period_ms[2];
+static unsigned int dummy_low_latency[2];
+static unsigned int dummy_pipeline[2];
+
+static int sched_task_handler(struct ctl_table *table, int write,
+        void __user *buffer, size_t *lenp,
+        loff_t *ppos)
+{
+    unsigned int pid_and_val[2];
+    int ret;
+
+    // Set up a temporary ctl_table to use for the call to proc_dointvec.
+    struct ctl_table tmp_table = {
+        .data = pid_and_val,
+        .maxlen = sizeof(pid_and_val),
+        .mode = table->mode,
+    };
+
+    // Initialize pid_and_val with the current data.
+    pid_and_val[0] = ((unsigned int *)(table->data))[0];
+    pid_and_val[1] = ((unsigned int *)(table->data))[1];
+
+    // Call proc_dointvec with the temporary table.
+    ret = proc_dointvec(&tmp_table, write, buffer, lenp, ppos);
+    if (ret)
+        return ret;
+
+    if (write) {
+        // If write was successful, update the data with the new values.
+        ((unsigned int *)(table->data))[0] = pid_and_val[0];
+        ((unsigned int *)(table->data))[1] = pid_and_val[1];
+    }
+
+    return 0;
+}
+
+int sched_busy_hyst_handler(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	if (table->maxlen > (sizeof(unsigned int) * num_possible_cpus()))
+		table->maxlen = sizeof(unsigned int) * num_possible_cpus();
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+	return ret;
+}
+
+int sched_updown_migrate_handler(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	if (table->maxlen > (sizeof(unsigned int) * 2))
+		table->maxlen = sizeof(unsigned int) * 2;
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+	return ret;
+}
+
+static DEFINE_MUTEX(boost_mutex);
+static int sched_boost_handler(struct ctl_table *table, int write,
+    void __user *buffer, size_t *lenp,
+    loff_t *ppos)
+{
+  int ret;
+  unsigned int *data = (unsigned int *)table->data;
+
+  //mutex_lock(&boost_mutex);
+
+  // Perform the standard sysctl handling for integer values
+  //ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+  //mutex_unlock(&boost_mutex);
+  return 0;
+}
+
+
+
+
+struct ctl_table input_boost_sysctls[] = {
+	{
+		.procname	= "input_boost_ms",
+		.data		= &sysctl_input_boost_ms,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_hundred_thousand,
+	},
+	{
+		.procname	= "input_boost_freq",
+		.data		= &sysctl_input_boost_freq,
+		.maxlen		= sizeof(unsigned int) * 8,
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_boost_on_input",
+		.data		= &sysctl_sched_boost_on_input,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{ }
+};
+struct ctl_table walt_table[] = {
+	{
+		.procname	= "sched_user_hint",
+		.data		= &sysctl_sched_user_hint,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= (void *)&sched_user_hint_max,
+	},
+	{
+		.procname	= "sched_window_stats_policy",
+		.data		= &sysctl_sched_window_stats_policy,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &four,
+	},
+	{
+		.procname	= "sched_group_upmigrate",
+		.data		= &sysctl_sched_group_upmigrate_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &sysctl_sched_group_downmigrate_pct,
+	},
+	{
+		.procname	= "sched_group_downmigrate",
+		.data		= &sysctl_sched_group_downmigrate_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &sysctl_sched_group_upmigrate_pct,
+	},
+	{
+		.procname	= "sched_boost",
+		.data		= &sysctl_sched_boost,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sched_boost_handler,
+		.extra1		= &neg_three,
+		.extra2		= &three,
+	},
+	{
+		.procname	= "sched_conservative_pl",
+		.data		= &sysctl_sched_conservative_pl,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_many_wakeup_threshold",
+		.data		= &sysctl_sched_many_wakeup_threshold,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &two,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_walt_rotate_big_tasks",
+		.data		= &sysctl_sched_walt_rotate_big_tasks,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_min_task_util_for_boost",
+		.data		= &sysctl_sched_min_task_util_for_boost,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_min_task_util_for_uclamp",
+		.data		= &sysctl_sched_min_task_util_for_uclamp,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_min_task_util_for_colocation",
+		.data		= &sysctl_sched_min_task_util_for_colocation,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_asym_cap_sibling_freq_match_pct",
+		.data		= &sysctl_sched_asym_cap_sibling_freq_match_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ONE,
+		.extra2		= &one_hundred,
+	},
+	{
+		.procname	= "sched_coloc_downmigrate_ns",
+		.data		= &sysctl_sched_coloc_downmigrate_ns,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+	},
+	{
+		.procname	= "sched_task_unfilter_period",
+		.data		= &sysctl_sched_task_unfilter_period,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ONE,
+		.extra2		= &two_hundred_million,
+	},
+	{
+		.procname	= "sched_busy_hysteresis_enable_cpus",
+		.data		= &sysctl_sched_busy_hyst_enable_cpus,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &two_hundred_fifty_five,
+	},
+	{
+		.procname	= "sched_busy_hyst_ns",
+		.data		= &sysctl_sched_busy_hyst,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &ns_per_sec,
+	},
+	{
+		.procname	= "sched_coloc_busy_hysteresis_enable_cpus",
+		.data		= &sysctl_sched_coloc_busy_hyst_enable_cpus,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &two_hundred_fifty_five,
+	},
+	{
+		.procname	= "sched_coloc_busy_hyst_cpu_ns",
+		.data		= &sysctl_sched_coloc_busy_hyst_cpu,
+		.maxlen		= sizeof(unsigned int) * 8,
+		.mode		= 0644,
+		.proc_handler	= sched_busy_hyst_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &ns_per_sec,
+	},
+	{
+		.procname	= "sched_coloc_busy_hyst_max_ms",
+		.data		= &sysctl_sched_coloc_busy_hyst_max_ms,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_hundred_thousand,
+	},
+	{
+		.procname	= "sched_coloc_busy_hyst_cpu_busy_pct",
+		.data		= &sysctl_sched_coloc_busy_hyst_cpu_busy_pct,
+		.maxlen		= sizeof(unsigned int) * 8,
+		.mode		= 0644,
+		.proc_handler	= sched_busy_hyst_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_hundred,
+	},
+	{
+		.procname	= "sched_util_busy_hysteresis_enable_cpus",
+		.data		= &sysctl_sched_util_busy_hyst_enable_cpus,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &two_hundred_fifty_five,
+	},
+	{
+		.procname	= "sched_util_busy_hyst_cpu_ns",
+		.data		= &sysctl_sched_util_busy_hyst_cpu,
+		.maxlen		= sizeof(unsigned int) * 8,
+		.mode		= 0644,
+		.proc_handler	= sched_busy_hyst_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &ns_per_sec,
+	},
+	{
+		.procname	= "sched_util_busy_hyst_cpu_util",
+		.data		= &sysctl_sched_util_busy_hyst_cpu_util,
+		.maxlen		= sizeof(unsigned int) * 8,
+		.mode		= 0644,
+		.proc_handler	= sched_busy_hyst_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_ravg_window_nr_ticks",
+		.data		= &sysctl_sched_ravg_window_nr_ticks,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+	},
+	{
+		.procname	= "sched_upmigrate",
+		.data		= &sysctl_sched_capacity_margin_up_pct,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_updown_migrate_handler,
+	},
+	{
+		.procname	= "sched_downmigrate",
+		.data		= &sysctl_sched_capacity_margin_dn_pct,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_updown_migrate_handler,
+	},
+	{
+		.procname	= "walt_rtg_cfs_boost_prio",
+		.data		= &sysctl_walt_rtg_cfs_boost_prio,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &min_cfs_boost_prio,
+		.extra2		= &max_cfs_boost_prio,
+	},
+	{
+		.procname	= "walt_low_latency_task_threshold",
+		.data		= &sysctl_walt_low_latency_task_threshold,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_force_lb_enable",
+		.data		= &sysctl_sched_force_lb_enable,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname       = "sched_sync_hint_enable",
+		.data           = &sysctl_sched_sync_hint_enable,
+		.maxlen         = sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname       = "sched_bug_on_rt_throttle",
+		.data           = &sysctl_sched_bug_on_rt_throttle,
+		.maxlen         = sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname       = "sched_suppress_region2",
+		.data           = &sysctl_sched_suppress_region2,
+		.maxlen         = sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname       = "sched_skip_sp_newly_idle_lb",
+		.data           = &sysctl_sched_skip_sp_newly_idle_lb,
+		.maxlen         = sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname       = "sched_hyst_min_coloc_ns",
+		.data           = &sysctl_sched_hyst_min_coloc_ns,
+		.maxlen         = sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+	},
+	{
+		.procname       = "panic_on_walt_bug",
+		.data           = &sysctl_panic_on_walt_bug,
+		.maxlen         = sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_lib_name",
+		.data		= sched_lib_name,
+		.maxlen		= 512,
+		.mode		= 0644,
+		.proc_handler	= proc_dostring,
+	},
+	{
+		.procname	= "sched_lib_mask_force",
+		.data		= &sched_lib_mask_force,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &two_hundred_fifty_five,
+	},
+	{
+		.procname	= "input_boost",
+		.mode		= 0555,
+		.proc_handler	= proc_douintvec_minmax,
+		.child		= input_boost_sysctls,
+	},
+	{
+		.procname	= "sched_task_read_pid",
+		.data		= &sysctl_task_read_pid,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ONE,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_enable_tp",
+		.data		= &sysctl_sched_dynamic_tp_enable,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_asymcap_boost",
+		.data		= &sysctl_sched_asymcap_boost,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_asymcap_booster",
+		.data		= &sysctl_sched_asymcap_boost,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_wake_up_idle",
+		.data		= dummy_wake_up_idle,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
+		.procname	= "sched_init_task_load",
+		.data		= dummy_init_task_load,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
+		.procname	= "sched_group_id",
+		.data		= dummy_group_id,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
+		.procname	= "sched_per_task_boost",
+		.data		= dummy_per_task_boost,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
+		.procname	= "sched_per_task_boost_period_ms",
+		.data		= dummy_per_task_boost_period_ms,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
+		.procname	= "sched_low_latency",
+		.data		= dummy_low_latency,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
+		.procname	= "sched_pipeline",
+		.data		= dummy_pipeline,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{ }
+};
+
+struct ctl_table walt_base_table[] = {
+	{
+		.procname	= "walt",
+		.mode		= 0555,
+		.child		= walt_table,
+	},
+	{ },
+};
+
 static struct ctl_table dev_table[] = {
 	{ }
 };
@@ -3574,11 +4185,15 @@ static struct ctl_table sysctl_base_table[] = {
 int __init sysctl_init(void)
 {
 	struct ctl_table_header *hdr;
+	struct ctl_table_header *walt_hdr;
 
 	hdr = register_sysctl_table(sysctl_base_table);
 	kmemleak_not_leak(hdr);
+	walt_hdr = register_sysctl_table(walt_base_table);
+	kmemleak_not_leak(walt_hdr);
 	return 0;
 }
+
 #endif /* CONFIG_SYSCTL */
 /*
  * No sense putting this after each symbol definition, twice,

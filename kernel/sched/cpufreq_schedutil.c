@@ -752,6 +752,7 @@ static void sugov_clear_global_tunables(void)
 		global_tunables = NULL;
 }
 
+int cpufreq_dummy_init(void);
 static int sugov_init(struct cpufreq_policy *policy)
 {
 	struct sugov_policy *sg_policy;
@@ -808,6 +809,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 
 out:
 	mutex_unlock(&global_tunables_lock);
+	cpufreq_dummy_init();
 	return 0;
 
 fail:
