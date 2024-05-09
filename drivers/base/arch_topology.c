@@ -307,6 +307,19 @@ static cpumask_var_t cpus_to_visit;
 static void parsing_done_workfn(struct work_struct *work);
 static DECLARE_WORK(parsing_done_work, parsing_done_workfn);
 
+void update_cpu_capacity(struct cpufreq_policy *policy, unsigned long new_max_freq) {
+    int cpu;
+    for_each_cpu(cpu, policy->related_cpus){
+       per_cpu(freq_factor, cpu) = new_max_freq / 1000;
+    }
+    topology_normalize_cpu_scale();
+    schedule_work(&update_topology_flags_work);
+    schedule_work(&parsing_done_work);
+    printk("CAPACITY UPDATED");
+}
+
+EXPORT_SYMBOL_GPL(update_cpu_capacity);
+
 static int
 init_cpu_capacity_callback(struct notifier_block *nb,
 			   unsigned long val,
@@ -333,13 +346,15 @@ init_cpu_capacity_callback(struct notifier_block *nb,
 	if (cpumask_empty(cpus_to_visit)) {
 		topology_normalize_cpu_scale();
 		schedule_work(&update_topology_flags_work);
-		free_raw_capacity();
+		//free_raw_capacity();
 		pr_debug("cpu_capacity: parsing done\n");
 		schedule_work(&parsing_done_work);
 	}
 
 	return 0;
 }
+
+
 
 static struct notifier_block init_cpu_capacity_notifier = {
 	.notifier_call = init_cpu_capacity_callback,
