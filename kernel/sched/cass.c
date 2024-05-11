@@ -248,12 +248,12 @@ static int cass_select_task_rq(struct task_struct *p, int prev_cpu,
 }
 
 static int cass_select_task_rq_fair(struct task_struct *p, int prev_cpu,
-				    int sd_flags, int wake_flags)
+				    int wake_flags)
 {
 	return cass_select_task_rq(p, prev_cpu, wake_flags, false);
 }
 
-int cass_select_task_rq_rt(struct task_struct *p, int prev_cpu, int sd_flags, int wake_flags)
+int cass_select_task_rq_rt(struct task_struct *p, int prev_cpu, int wake_flags)
 {
 	return cass_select_task_rq(p, prev_cpu, wake_flags, true);
 }
