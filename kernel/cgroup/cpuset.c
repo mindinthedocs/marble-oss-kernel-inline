@@ -410,14 +410,11 @@ static inline bool is_in_v2_mode(void)
 static void guarantee_online_cpus(struct task_struct *tsk,
 				  struct cpumask *pmask)
 {
+	struct cpuset *cs = task_cs(tsk);
 	const struct cpumask *possible_mask = task_cpu_possible_mask(tsk);
-	struct cpuset *cs;
 
 	if (WARN_ON(!cpumask_and(pmask, possible_mask, cpu_active_mask)))
 		cpumask_copy(pmask, cpu_active_mask);
-
-	rcu_read_lock();
-	cs = task_cs(tsk);
 
 	while (!cpumask_intersects(cs->effective_cpus, pmask)) {
 		cs = parent_cs(cs);
@@ -429,13 +426,10 @@ static void guarantee_online_cpus(struct task_struct *tsk,
 			 * cpuset's effective_cpus is on its way to be
 			 * identical to cpu_online_mask.
 			 */
-			goto out_unlock;
+			return;
 		}
 	}
 	cpumask_and(pmask, pmask, cs->effective_cpus);
-
-out_unlock:
-	rcu_read_unlock();
 }
 
 /*
