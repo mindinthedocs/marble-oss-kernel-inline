@@ -1593,7 +1593,7 @@ static int cpu_up(unsigned int cpu, enum cpuhp_state target)
 		return -EINVAL;
 	}
 
-	trace_android_vh_cpu_up(cpu);
+	trace_android_vh_cpu_up(NULL);
 
 	/*
 	 * CPU hotplug operations consists of many steps and each step
