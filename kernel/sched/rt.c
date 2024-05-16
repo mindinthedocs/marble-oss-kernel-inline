@@ -1503,7 +1503,7 @@ select_task_rq_rt(struct task_struct *p, int cpu, int flags)
 	bool sync = !!(flags & WF_SYNC);
 	int this_cpu;
 
-	trace_android_rvh_select_task_rq_rt(p, cpu, sd_flag,
+	trace_android_rvh_select_task_rq_rt(p, cpu, flags & 0xF,
 					flags, &target_cpu);
 	if (target_cpu >= 0)
 		return target_cpu;

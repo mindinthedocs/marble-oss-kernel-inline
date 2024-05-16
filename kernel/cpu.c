@@ -33,6 +33,7 @@
 #include <linux/slab.h>
 #include <linux/scs.h>
 #include <linux/percpu-rwsem.h>
+#include <linux/cpuset.h>
 #include <linux/random.h>
 #include <uapi/linux/sched/types.h>
 
