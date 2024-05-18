@@ -3391,7 +3391,6 @@ int __init sysctl_init(void)
 	kmemleak_not_leak(hdr);
 	return 0;
 }
-#endif /* CONFIG_SYSCTL */
 /*
  * No sense putting this after each symbol definition, twice,
  * exception granted :-)
