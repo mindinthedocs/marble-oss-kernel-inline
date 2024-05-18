@@ -350,19 +350,11 @@ struct load_weight {
  * Only for tasks we track a moving average of the past instantaneous
  * estimated utilization. This allows to absorb sporadic drops in utilization
  * of an otherwise almost periodic task.
- *
- * The UTIL_AVG_UNCHANGED flag is used to synchronize util_est with util_avg
- * updates. When a task is dequeued, its util_est should not be updated if its
- * util_avg has not been updated in the meantime.
- * This information is mapped into the MSB bit of util_est.enqueued at dequeue
- * time. Since max value of util_est.enqueued for a task is 1024 (PELT util_avg
- * for a task) it is safe to use MSB.
  */
 struct util_est {
 	unsigned int			enqueued;
 	unsigned int			ewma;
 #define UTIL_EST_WEIGHT_SHIFT		2
-#define UTIL_AVG_UNCHANGED		0x80000000
 } __attribute__((__aligned__(sizeof(u64))));
 
 /*
@@ -494,11 +486,6 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
-	ANDROID_KABI_RESERVE(3);
-	ANDROID_KABI_RESERVE(4);
 };
 
 struct sched_rt_entity {
@@ -517,11 +504,6 @@ struct sched_rt_entity {
 	/* rq "owned" by this entity/group: */
 	struct rt_rq			*my_q;
 #endif
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
-	ANDROID_KABI_RESERVE(3);
-	ANDROID_KABI_RESERVE(4);
 } __randomize_layout;
 
 struct sched_dl_entity {
@@ -553,6 +535,10 @@ struct sched_dl_entity {
 	 * @dl_throttled tells if we exhausted the runtime. If so, the
 	 * task has to wait for a replenishment to be performed at the
 	 * next firing of dl_timer.
+	 *
+	 * @dl_boosted tells if we are boosted due to DI. If so we are
+	 * outside bandwidth enforcement mechanism (but only until we
+	 * exit the critical section);
 	 *
 	 * @dl_yielded tells if task gave up the CPU before consuming
 	 * all its available runtime during the last job.
@@ -913,10 +899,6 @@ struct task_struct {
 	u64				stimescaled;
 #endif
 	u64				gtime;
-#ifdef CONFIG_CPU_FREQ_TIMES
-	u64				*time_in_state;
-	unsigned int			max_state;
-#endif
 	struct prev_cputime		prev_cputime;
 #ifdef CONFIG_VIRT_CPU_ACCOUNTING_GEN
 	struct vtime			vtime;
@@ -1028,7 +1010,6 @@ struct task_struct {
 	raw_spinlock_t			pi_lock;
 
 	struct wake_q_node		wake_q;
-	int				wake_q_count;
 
 #ifdef CONFIG_RT_MUTEXES
 	/* PI waiters blocked on a rt_mutex held by this task: */
@@ -1376,7 +1357,10 @@ struct task_struct {
 					mce_whole_page : 1,
 					__mce_reserved : 62;
 	struct callback_head		mce_kill_me;
-	int				mce_count;
+#endif
+
+#ifdef CONFIG_KRETPROBES
+	struct llist_head               kretprobe_instances;
 #endif
 	ANDROID_VENDOR_DATA_ARRAY(1, 64);
 	ANDROID_OEM_DATA_ARRAY(1, 32);
@@ -1579,6 +1563,7 @@ extern struct pid *cad_pid;
 #define PF_MEMALLOC		0x00000800	/* Allocating memory */
 #define PF_NPROC_EXCEEDED	0x00001000	/* set_user() noticed that RLIMIT_NPROC was exceeded */
 #define PF_USED_MATH		0x00002000	/* If unset the fpu must be initialized before use */
+#define PF_USED_ASYNC		0x00004000	/* Used async_schedule*(), used by module init */
 #define PF_NOFREEZE		0x00008000	/* This thread should not be frozen */
 #define PF_FROZEN		0x00010000	/* Frozen for system suspend */
 #define PF_KSWAPD		0x00020000	/* I am kswapd */
@@ -1623,7 +1608,7 @@ extern struct pid *cad_pid;
 #define tsk_used_math(p)			((p)->flags & PF_USED_MATH)
 #define used_math()				tsk_used_math(current)
 
-static __always_inline bool is_percpu_thread(void)
+static inline bool is_percpu_thread(void)
 {
 #ifdef CONFIG_SMP
 	return (current->flags & PF_NO_SETAFFINITY) &&
@@ -1692,7 +1677,7 @@ current_restore_flags(unsigned long orig_flags, unsigned long flags)
 }
 
 extern int cpuset_cpumask_can_shrink(const struct cpumask *cur, const struct cpumask *trial);
-extern int task_can_attach(struct task_struct *p, const struct cpumask *cs_effective_cpus);
+extern int task_can_attach(struct task_struct *p, const struct cpumask *cs_cpus_allowed);
 #ifdef CONFIG_SMP
 extern void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask);
 extern int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask);
@@ -1927,22 +1912,10 @@ static inline int _cond_resched(void) { return 0; }
 })
 
 extern int __cond_resched_lock(spinlock_t *lock);
-extern int __cond_resched_rwlock_read(rwlock_t *lock);
-extern int __cond_resched_rwlock_write(rwlock_t *lock);
 
 #define cond_resched_lock(lock) ({				\
 	___might_sleep(__FILE__, __LINE__, PREEMPT_LOCK_OFFSET);\
 	__cond_resched_lock(lock);				\
-})
-
-#define cond_resched_rwlock_read(lock) ({			\
-	__might_sleep(__FILE__, __LINE__, PREEMPT_LOCK_OFFSET);	\
-	__cond_resched_rwlock_read(lock);			\
-})
-
-#define cond_resched_rwlock_write(lock) ({			\
-	__might_sleep(__FILE__, __LINE__, PREEMPT_LOCK_OFFSET);	\
-	__cond_resched_rwlock_write(lock);			\
 })
 
 static inline void cond_resched_rcu(void)
@@ -1963,23 +1936,6 @@ static inline int spin_needbreak(spinlock_t *lock)
 {
 #ifdef CONFIG_PREEMPTION
 	return spin_is_contended(lock);
-#else
-	return 0;
-#endif
-}
-
-/*
- * Check if a rwlock is contended.
- * Returns non-zero if there is another task waiting on the rwlock.
- * Returns zero if the lock is not contended or the system / underlying
- * rwlock implementation does not support contention detection.
- * Technically does not depend on CONFIG_PREEMPTION, but a general need
- * for low latency.
- */
-static inline int rwlock_needbreak(rwlock_t *lock)
-{
-#ifdef CONFIG_PREEMPTION
-	return rwlock_is_contended(lock);
 #else
 	return 0;
 #endif

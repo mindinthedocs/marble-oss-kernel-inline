@@ -12,7 +12,6 @@
 
 #include <linux/sched/cpufreq.h>
 #include <trace/events/power.h>
-#include <trace/hooks/sched.h>
 
 #define IOWAIT_BOOST_MIN	(SCHED_CAPACITY_SCALE / 8)
 
@@ -27,7 +26,7 @@ struct sugov_policy {
 	struct sugov_tunables	*tunables;
 	struct list_head	tunables_hook;
 
-	raw_spinlock_t		update_lock;
+	raw_spinlock_t		update_lock;	/* For shared policies */
 	u64			last_freq_update_time;
 	s64			freq_update_delay_ns;
 	unsigned int		next_freq;
@@ -162,14 +161,8 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
-	unsigned long next_freq = 0;
 
-	trace_android_vh_map_util_freq(util, freq, max, &next_freq, policy,
-			&sg_policy->need_freq_update);
-	if (next_freq)
-		freq = next_freq;
-	else
-		freq = map_util_freq(util, freq, max);
+	freq = map_util_freq(util, freq, max);
 
 	if (freq == sg_policy->cached_raw_freq && !sg_policy->need_freq_update)
 		return sg_policy->next_freq;
@@ -327,21 +320,23 @@ static inline bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu) { return false; }
  * Make sugov_should_update_freq() ignore the rate limit when DL
  * has increased the utilization.
  */
-static inline void ignore_dl_rate_limit(struct sugov_cpu *sg_cpu)
+static inline void ignore_dl_rate_limit(struct sugov_cpu *sg_cpu, struct sugov_policy *sg_policy)
 {
 	if (cpu_bw_dl(cpu_rq(sg_cpu->cpu)) > sg_cpu->bw_dl)
-		sg_cpu->sg_policy->limits_changed = true;
+		sg_policy->limits_changed = true;
 }
 
 static inline bool sugov_update_single_common(struct sugov_cpu *sg_cpu,
 					      u64 time, unsigned int flags)
 {
+	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
+
 	sugov_iowait_boost(sg_cpu, time, flags);
 	sg_cpu->last_update = time;
 
-	ignore_dl_rate_limit(sg_cpu);
+	ignore_dl_rate_limit(sg_cpu, sg_policy);
 
-	if (!sugov_should_update_freq(sg_cpu->sg_policy, time))
+	if (!sugov_should_update_freq(sg_policy, time))
 		return false;
 
 	sugov_get_util(sg_cpu);
@@ -456,7 +451,7 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 	sugov_iowait_boost(sg_cpu, time, flags);
 	sg_cpu->last_update = time;
 
-	ignore_dl_rate_limit(sg_cpu);
+	ignore_dl_rate_limit(sg_cpu, sg_policy);
 
 	if (sugov_should_update_freq(sg_policy, time)) {
 		next_f = sugov_next_freq_shared(sg_cpu, time);
@@ -548,17 +543,9 @@ static struct attribute *sugov_attrs[] = {
 };
 ATTRIBUTE_GROUPS(sugov);
 
-static void sugov_tunables_free(struct kobject *kobj)
-{
-	struct gov_attr_set *attr_set = container_of(kobj, struct gov_attr_set, kobj);
-
-	kfree(to_sugov_tunables(attr_set));
-}
-
 static struct kobj_type sugov_tunables_ktype = {
 	.default_groups = sugov_groups,
 	.sysfs_ops = &governor_sysfs_ops,
-	.release = &sugov_tunables_free,
 };
 
 /********************** cpufreq governor interface *********************/
@@ -658,10 +645,12 @@ static struct sugov_tunables *sugov_tunables_alloc(struct sugov_policy *sg_polic
 	return tunables;
 }
 
-static void sugov_clear_global_tunables(void)
+static void sugov_tunables_free(struct sugov_tunables *tunables)
 {
 	if (!have_governor_per_policy())
 		global_tunables = NULL;
+
+	kfree(tunables);
 }
 
 static int sugov_init(struct cpufreq_policy *policy)
@@ -724,7 +713,7 @@ out:
 fail:
 	kobject_put(&tunables->attr_set.kobj);
 	policy->governor_data = NULL;
-	sugov_clear_global_tunables();
+	sugov_tunables_free(tunables);
 
 stop_kthread:
 	sugov_kthread_stop(sg_policy);
@@ -751,7 +740,7 @@ static void sugov_exit(struct cpufreq_policy *policy)
 	count = gov_attr_set_put(&tunables->attr_set, &sg_policy->tunables_hook);
 	policy->governor_data = NULL;
 	if (!count)
-		sugov_clear_global_tunables();
+		sugov_tunables_free(tunables);
 
 	mutex_unlock(&global_tunables_lock);
 
@@ -846,3 +835,29 @@ struct cpufreq_governor *cpufreq_default_governor(void)
 #endif
 
 cpufreq_governor_init(schedutil_gov);
+
+#ifdef CONFIG_ENERGY_MODEL
+static void rebuild_sd_workfn(struct work_struct *work)
+{
+	rebuild_sched_domains_energy();
+}
+static DECLARE_WORK(rebuild_sd_work, rebuild_sd_workfn);
+
+/*
+ * EAS shouldn't be attempted without sugov, so rebuild the sched_domains
+ * on governor changes to make sure the scheduler knows about it.
+ */
+void sched_cpufreq_governor_change(struct cpufreq_policy *policy,
+				  struct cpufreq_governor *old_gov)
+{
+	if (old_gov == &schedutil_gov || policy->governor == &schedutil_gov) {
+		/*
+		 * When called from the cpufreq_register_driver() path, the
+		 * cpu_hotplug_lock is already held, so use a work item to
+		 * avoid nested locking in rebuild_sched_domains().
+		 */
+		schedule_work(&rebuild_sd_work);
+	}
+
+}
+#endif
