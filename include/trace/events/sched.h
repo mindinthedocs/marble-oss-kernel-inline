@@ -291,7 +291,7 @@ TRACE_EVENT(sched_migrate_task,
 		__entry->prio		= p->prio; /* XXX SCHED_DEADLINE */
 		__entry->orig_cpu	= task_cpu(p);
 		__entry->dest_cpu	= dest_cpu;
-		__entry->running	= (p->state == TASK_RUNNING);
+		__entry->running	= (task_is_running(p));
 	),
 
 	TP_printk("comm=%s pid=%d prio=%d orig_cpu=%d dest_cpu=%d running=%d",

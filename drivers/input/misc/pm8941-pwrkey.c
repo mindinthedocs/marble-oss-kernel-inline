@@ -171,7 +171,7 @@ void show_state_filter_single(unsigned long state_filter)
 		 */
 		touch_nmi_watchdog();
 		//touch_all_softlockup_watchdogs();
-		if (p->state == state_filter)
+		if (p->__state == state_filter)
 			sched_show_task(p);
 	}
 	rcu_read_unlock();
