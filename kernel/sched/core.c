@@ -13,7 +13,7 @@
 #include "sched.h"
 
 #include <linux/nospec.h>
-
+#include <linux/blkdev.h>
 #include <linux/kcov.h>
 #include <linux/scs.h>
 
@@ -21,7 +21,7 @@
 #include <asm/tlb.h>
 
 #include "../workqueue_internal.h"
-#include "../../fs/io-wq.h"
+#include "../../io_uring/io-wq.h"
 #include "../smpboot.h"
 
 #include "pelt.h"
@@ -890,6 +890,7 @@ static bool __wake_q_add(struct wake_q_head *head, struct task_struct *task)
 	 */
 	*head->lastp = node;
 	head->lastp = &node->next;
+	head->count++;
 	return true;
 }
 
@@ -945,12 +946,14 @@ void wake_up_q(struct wake_q_head *head)
 		/* Task can safely be re-inserted now: */
 		node = node->next;
 		task->wake_q.next = NULL;
+		task->wake_q_count = head->count;
 
 		/*
 		 * wake_up_process() executes a full barrier, which pairs with
 		 * the queueing in wake_q_add() so as not to miss wakeups.
 		 */
 		wake_up_process(task);
+		task->wake_q_count = 0;
 		put_task_struct(task);
 	}
 }
@@ -4126,61 +4129,47 @@ out:
 
 /**
  * try_invoke_on_locked_down_task - Invoke a function on task in fixed state
- * @p: Process for which the function is to be invoked, can be @current.
+ * @p: Process for which the function is to be invoked.
  * @func: Function to invoke.
  * @arg: Argument to function.
  *
- * Fix the task in it's current state by avoiding wakeups and or rq operations
- * and call @func(@arg) on it.  This function can use ->on_rq and task_curr()
- * to work out what the state is, if required.  Given that @func can be invoked
- * with a runqueue lock held, it had better be quite lightweight.
+ * If the specified task can be quickly locked into a definite state
+ * (either sleeping or on a given runqueue), arrange to keep it in that
+ * state while invoking @func(@arg).  This function can use ->on_rq and
+ * task_curr() to work out what the state is, if required.  Given that
+ * @func can be invoked with a runqueue lock held, it had better be quite
+ * lightweight.
  *
  * Returns:
- *   Whatever @func returns
+ *	@false if the task slipped out from under the locks.
+ *	@true if the task was locked onto a runqueue or is sleeping.
+ *		However, @func can override this by returning @false.
  */
 bool try_invoke_on_locked_down_task(struct task_struct *p, bool (*func)(struct task_struct *t, void *arg), void *arg)
 {
-	struct rq *rq = NULL;
-	unsigned int state;
-	struct rq_flags rf;
 	bool ret = false;
+	struct rq_flags rf;
+	struct rq *rq;
 
-	raw_spin_lock_irqsave(&p->pi_lock, rf.flags);
-
-	state = READ_ONCE(p->__state);
-
-	/*
-	 * Ensure we load p->on_rq after p->__state, otherwise it would be
-	 * possible to, falsely, observe p->on_rq == 0.
-	 *
-	 * See try_to_wake_up() for a longer comment.
-	 */
-	smp_rmb();
-
-	/*
-	 * Since pi->lock blocks try_to_wake_up(), we don't need rq->lock when
-	 * the task is blocked. Make sure to check @state since ttwu() can drop
-	 * locks at the end, see ttwu_queue_wakelist().
-	 */
-	if (state == TASK_RUNNING || state == TASK_WAKING || p->on_rq)
+	lockdep_assert_irqs_enabled();
+	raw_spin_lock_irq(&p->pi_lock);
+	if (p->on_rq) {
 		rq = __task_rq_lock(p, &rf);
-
-	/*
-	 * At this point the task is pinned; either:
-	 *  - blocked and we're holding off wakeups	 (pi->lock)
-	 *  - woken, and we're holding off enqueue	 (rq->lock)
-	 *  - queued, and we're holding off schedule	 (rq->lock)
-	 *  - running, and we're holding off de-schedule (rq->lock)
-	 *
-	 * The called function (@func) can use: task_curr(), p->on_rq and
-	 * p->__state to differentiate between these states.
-	 */
-	ret = func(p, arg);
-
-	if (rq)
+		if (task_rq(p) == rq)
+			ret = func(p, arg);
 		rq_unlock(rq, &rf);
-
-	raw_spin_unlock_irqrestore(&p->pi_lock, rf.flags);
+	} else {
+		switch (READ_ONCE(p->__state)) {
+		case TASK_RUNNING:
+		case TASK_WAKING:
+			break;
+		default:
+			smp_rmb(); // See smp_rmb() comment in try_to_wake_up().
+			if (!p->on_rq)
+				ret = func(p, arg);
+		}
+	}
+	raw_spin_unlock_irq(&p->pi_lock);
 	return ret;
 }
 
@@ -7198,6 +7187,7 @@ static int __sched_setscheduler(struct task_struct *p,
 	int reset_on_fork;
 	int queue_flags = DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
 	struct rq *rq;
+	bool cpuset_locked = false;
 
 	/* The pi code expects interrupts enabled */
 	BUG_ON(pi && in_interrupt());
@@ -7294,8 +7284,14 @@ recheck:
 			return retval;
 	}
 
-	if (pi)
-		cpuset_read_lock();
+	/*
+	 * SCHED_DEADLINE bandwidth accounting relies on stable cpusets
+	 * information.
+	 */
+	if (dl_policy(policy) || dl_policy(p->policy)) {
+		cpuset_locked = true;
+		cpuset_lock();
+	}
 
 	/*
 	 * Make sure no PI-waiters arrive (or leave) while we are
@@ -7371,8 +7367,8 @@ change:
 	if (unlikely(oldpolicy != -1 && oldpolicy != p->policy)) {
 		policy = oldpolicy = -1;
 		task_rq_unlock(rq, p, &rf);
-		if (pi)
-			cpuset_read_unlock();
+		if (cpuset_locked)
+			cpuset_unlock();
 		goto recheck;
 	}
 
@@ -7439,7 +7435,8 @@ change:
 	task_rq_unlock(rq, p, &rf);
 
 	if (pi) {
-		cpuset_read_unlock();
+		if (cpuset_locked)
+			cpuset_unlock();
 		rt_mutex_adjust_pi(p);
 	}
 
@@ -7451,8 +7448,8 @@ change:
 
 unlock:
 	task_rq_unlock(rq, p, &rf);
-	if (pi)
-		cpuset_read_unlock();
+	if (cpuset_locked)
+		cpuset_unlock();
 	return retval;
 }
 
@@ -7501,7 +7498,6 @@ int sched_setattr_nocheck(struct task_struct *p, const struct sched_attr *attr)
 {
 	return __sched_setscheduler(p, attr, false, true);
 }
-EXPORT_SYMBOL_GPL(sched_setattr_nocheck);
 
 /**
  * sched_setscheduler_nocheck - change the scheduling policy and/or RT priority of a thread from kernelspace.
@@ -8773,6 +8769,7 @@ void idle_task_exit(void)
 		finish_arch_post_lock_switch();
 	}
 
+	scs_task_reset(current);
 	/* finish_cpu(), as ran on the BP, will clean up the active_mm state */
 }
 
@@ -9448,14 +9445,8 @@ void __init sched_init(void)
 }
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
-static inline int preempt_count_equals(int preempt_offset)
-{
-	int nested = preempt_count() + rcu_preempt_depth();
 
-	return (nested == preempt_offset);
-}
-
-void __might_sleep(const char *file, int line, int preempt_offset)
+void __might_sleep(const char *file, int line)
 {
 	unsigned int state = get_current_state();
 	/*
@@ -9469,11 +9460,32 @@ void __might_sleep(const char *file, int line, int preempt_offset)
 			(void *)current->task_state_change,
 			(void *)current->task_state_change);
 
-	___might_sleep(file, line, preempt_offset);
+	__might_resched(file, line, 0);
 }
 EXPORT_SYMBOL(__might_sleep);
 
-void ___might_sleep(const char *file, int line, int preempt_offset)
+static void print_preempt_disable_ip(int preempt_offset, unsigned long ip)
+{
+	if (!IS_ENABLED(CONFIG_DEBUG_PREEMPT))
+		return;
+
+	if (preempt_count() == preempt_offset)
+		return;
+
+	pr_err("Preemption disabled at:");
+	print_ip_sym(KERN_ERR, ip);
+}
+
+static inline bool resched_offsets_ok(unsigned int offsets)
+{
+	unsigned int nested = preempt_count();
+
+	nested += rcu_preempt_depth() << MIGHT_RESCHED_RCU_SHIFT;
+
+	return nested == offsets;
+}
+
+void __might_resched(const char *file, int line, unsigned int offsets)
 {
 	/* Ratelimiting timestamp: */
 	static unsigned long prev_jiffy;
@@ -9483,7 +9495,7 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	/* WARN_ON_ONCE() by default, no rate limit required: */
 	rcu_sleep_check();
 
-	if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
+	if ((resched_offsets_ok(offsets) && !irqs_disabled() &&
 	     !is_idle_task(current) && !current->non_block_count) ||
 	    system_state == SYSTEM_BOOTING || system_state > SYSTEM_RUNNING ||
 	    oops_in_progress)
@@ -9496,29 +9508,33 @@ void ___might_sleep(const char *file, int line, int preempt_offset)
 	/* Save this before calling printk(), since that will clobber it: */
 	preempt_disable_ip = get_preempt_disable_ip(current);
 
-	printk(KERN_ERR
-		"BUG: sleeping function called from invalid context at %s:%d\n",
-			file, line);
-	printk(KERN_ERR
-		"in_atomic(): %d, irqs_disabled(): %d, non_block: %d, pid: %d, name: %s\n",
-			in_atomic(), irqs_disabled(), current->non_block_count,
-			current->pid, current->comm);
+	pr_err("BUG: sleeping function called from invalid context at %s:%d\n",
+	       file, line);
+	pr_err("in_atomic(): %d, irqs_disabled(): %d, non_block: %d, pid: %d, name: %s\n",
+	       in_atomic(), irqs_disabled(), current->non_block_count,
+	       current->pid, current->comm);
+	pr_err("preempt_count: %x, expected: %x\n", preempt_count(),
+	       offsets & MIGHT_RESCHED_PREEMPT_MASK);
+
+	if (IS_ENABLED(CONFIG_PREEMPT_RCU)) {
+		pr_err("RCU nest depth: %d, expected: %u\n",
+		       rcu_preempt_depth(), offsets >> MIGHT_RESCHED_RCU_SHIFT);
+	}
 
 	if (task_stack_end_corrupted(current))
-		printk(KERN_EMERG "Thread overran stack, or stack corrupted\n");
+		pr_emerg("Thread overran stack, or stack corrupted\n");
 
 	debug_show_held_locks(current);
 	if (irqs_disabled())
 		print_irqtrace_events(current);
-	if (IS_ENABLED(CONFIG_DEBUG_PREEMPT)
-	    && !preempt_count_equals(preempt_offset)) {
-		pr_err("Preemption disabled at:");
-		print_ip_sym(KERN_ERR, preempt_disable_ip);
-	}
+
+	print_preempt_disable_ip(offsets & MIGHT_RESCHED_PREEMPT_MASK,
+				 preempt_disable_ip);
+
 	dump_stack();
 	add_taint(TAINT_WARN, LOCKDEP_STILL_OK);
 }
-EXPORT_SYMBOL(___might_sleep);
+EXPORT_SYMBOL(__might_resched);
 
 void __cant_sleep(const char *file, int line, int preempt_offset)
 {
