@@ -5,6 +5,7 @@
  *
  * Copyright (C) 2016, Intel Corporation
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -24,12 +25,11 @@ struct waltgov_tunables {
 	unsigned int		rtg_boost_freq;
 	unsigned int		adaptive_low_freq;
 	unsigned int		adaptive_high_freq;
+	unsigned int		adaptive_low_freq_kernel;
+	unsigned int		adaptive_high_freq_kernel;
 	unsigned int		target_load_thresh;
 	unsigned int		target_load_shift;
 	bool			pl;
-	int			*target_loads;
-	int			ntarget_loads;
-	spinlock_t		target_loads_lock;
 	int			boost;
 };
 
@@ -52,6 +52,7 @@ struct waltgov_policy {
 	s64			down_rate_delay_ns;
 	unsigned int		next_freq;
 	unsigned int		cached_raw_freq;
+	unsigned int		driving_cpu;
 
 	/* The next fields are only needed if fast switch cannot be used: */
 	struct	irq_work	irq_work;
@@ -62,6 +63,7 @@ struct waltgov_policy {
 
 	bool			limits_changed;
 	bool			need_freq_update;
+	bool			thermal_isolated;
 };
 
 struct waltgov_cpu {
@@ -72,14 +74,12 @@ struct waltgov_cpu {
 	unsigned long		util;
 	unsigned long		max;
 	unsigned int		flags;
+	unsigned int		reasons;
 };
 
 DEFINE_PER_CPU(struct waltgov_callback *, waltgov_cb_data);
 static DEFINE_PER_CPU(struct waltgov_cpu, waltgov_cpu);
 static DEFINE_PER_CPU(struct waltgov_tunables *, cached_tunables);
-
-#define DEFAULT_TARGET_LOAD (0)
-static int default_target_loads[] = {DEFAULT_TARGET_LOAD};
 
 /************************ Governor internals ***********************/
 
@@ -122,6 +122,14 @@ static bool waltgov_up_down_rate_limit(struct waltgov_policy *wg_policy, u64 tim
 	return false;
 }
 
+static void __waltgov_update_next_freq(struct waltgov_policy *wg_policy,
+		u64 time, unsigned int next_freq, unsigned int raw_freq)
+{
+	wg_policy->cached_raw_freq = raw_freq;
+	wg_policy->next_freq = next_freq;
+	wg_policy->last_freq_update_time = time;
+}
+
 static bool waltgov_update_next_freq(struct waltgov_policy *wg_policy, u64 time,
 					unsigned int next_freq,
 					unsigned int raw_freq)
@@ -134,9 +142,7 @@ static bool waltgov_update_next_freq(struct waltgov_policy *wg_policy, u64 time,
 		return false;
 	}
 
-	wg_policy->cached_raw_freq = raw_freq;
-	wg_policy->next_freq = next_freq;
-	wg_policy->last_freq_update_time = time;
+	__waltgov_update_next_freq(wg_policy, time, next_freq, raw_freq);
 
 	return true;
 }
@@ -171,8 +177,25 @@ static void waltgov_calc_avg_cap(struct waltgov_policy *wg_policy, u64 curr_ws,
 {
 	u64 last_ws = wg_policy->last_ws;
 	unsigned int avg_freq;
+	int cpu;
 
-	BUG_ON(curr_ws < last_ws);
+	if (curr_ws < last_ws) {
+		printk_deferred("============ WALT CPUFREQ DUMP START ==============\n");
+		for_each_online_cpu(cpu) {
+			struct waltgov_cpu *wg_cpu = &per_cpu(waltgov_cpu, cpu);
+			struct waltgov_policy *wg_policy_internal = wg_cpu->wg_policy;
+
+			printk_deferred("cpu=%d walt_load->ws=%llu and policy->last_ws=%llu\n",
+					wg_cpu->cpu, wg_cpu->walt_load.ws,
+					wg_policy_internal->last_ws);
+		}
+		printk_deferred("============ WALT CPUFREQ DUMP END  ==============\n");
+		WALT_BUG(WALT_BUG_WALT, NULL,
+				"policy->related_cpus=0x%x curr_ws=%llu < last_ws=%llu",
+				cpumask_bits(wg_policy->policy->related_cpus)[0], curr_ws,
+				last_ws);
+	}
+
 	if (curr_ws <= last_ws)
 		return;
 
@@ -223,36 +246,106 @@ static inline unsigned long walt_map_util_freq(unsigned long util,
 	return (fmax + (fmax >> 2)) * util / cap;
 }
 
+static inline unsigned int get_adaptive_low_freq(struct waltgov_policy *wg_policy)
+{
+	return(max(wg_policy->tunables->adaptive_low_freq,
+		   wg_policy->tunables->adaptive_low_freq_kernel));
+}
+
+static inline unsigned int get_adaptive_high_freq(struct waltgov_policy *wg_policy)
+{
+	return(max(wg_policy->tunables->adaptive_high_freq,
+		   wg_policy->tunables->adaptive_high_freq_kernel));
+}
+
 static unsigned int get_next_freq(struct waltgov_policy *wg_policy,
 				  unsigned long util, unsigned long max,
 				  struct waltgov_cpu *wg_cpu, u64 time)
 {
 	struct cpufreq_policy *policy = wg_policy->policy;
 	unsigned int freq, raw_freq, final_freq;
+	struct waltgov_cpu *wg_driv_cpu = &per_cpu(waltgov_cpu, wg_policy->driving_cpu);
+	struct walt_sched_cluster *cluster;
+	bool skip = false;
+	bool thermal_isolated_now = cpus_halted_by_client(
+			wg_policy->policy->related_cpus, PAUSE_THERMAL);
 
-	raw_freq = walt_map_util_freq(util, wg_policy, max, wg_cpu->cpu);
-	freq = raw_freq;
-
-	if (wg_policy->tunables->adaptive_high_freq) {
-		if (raw_freq < wg_policy->tunables->adaptive_low_freq)
-			freq = wg_policy->tunables->adaptive_low_freq;
-		else if (raw_freq <= wg_policy->tunables->adaptive_high_freq)
-			freq = wg_policy->tunables->adaptive_high_freq;
+	if (thermal_isolated_now) {
+		if (!wg_policy->thermal_isolated) {
+			/* Entering thermal isolation */
+			wg_policy->thermal_isolated = true;
+			wg_policy->policy->cached_resolved_idx = 0;
+			final_freq = wg_policy->policy->freq_table[0].frequency;
+			__waltgov_update_next_freq(wg_policy, time, final_freq, final_freq);
+		} else {
+			final_freq = 0;  /* no need to change freq, i.e. continue with min freq */
+		}
+		raw_freq = final_freq;
+		freq = raw_freq;
+		goto out;
+	} else {
+		if (wg_policy->thermal_isolated) {
+			/* Exiting thermal isolation*/
+			wg_policy->thermal_isolated = false;
+			wg_policy->need_freq_update = true;
+		}
 	}
 
-	trace_waltgov_next_freq(policy->cpu, util, max, raw_freq, freq, policy->min, policy->max,
-				wg_policy->cached_raw_freq, wg_policy->need_freq_update);
+	raw_freq = walt_map_util_freq(util, wg_policy, max, wg_driv_cpu->cpu);
+	freq = raw_freq;
+
+	cluster = cpu_cluster(policy->cpu);
+	if (cpumask_intersects(&cluster->cpus, cpu_partial_halt_mask) &&
+			is_state1())
+		skip = true;
+
+	if (wg_policy->tunables->adaptive_high_freq && !skip) {
+		if (raw_freq < get_adaptive_low_freq(wg_policy)) {
+			freq = get_adaptive_low_freq(wg_policy);
+			wg_driv_cpu->reasons = CPUFREQ_REASON_ADAPTIVE_LOW;
+		} else if (raw_freq <= get_adaptive_high_freq(wg_policy)) {
+			freq = get_adaptive_high_freq(wg_policy);
+			wg_driv_cpu->reasons = CPUFREQ_REASON_ADAPTIVE_HIGH;
+		}
+	}
+
+	if (freq > fmax_cap[SMART_FMAX_CAP][cluster->id]) {
+		freq = fmax_cap[SMART_FMAX_CAP][cluster->id];
+		wg_driv_cpu->reasons |= CPUFREQ_REASON_SMART_FMAX_CAP;
+	}
+	if (freq > fmax_cap[HIGH_PERF_CAP][cluster->id]) {
+		freq = fmax_cap[HIGH_PERF_CAP][cluster->id];
+		wg_driv_cpu->reasons |= CPUFREQ_REASON_HIGH_PERF_CAP;
+	}
+	if (freq > fmax_cap[PARTIAL_HALT_CAP][cluster->id]) {
+		freq = fmax_cap[PARTIAL_HALT_CAP][cluster->id];
+		wg_driv_cpu->reasons |= CPUFREQ_REASON_PARTIAL_HALT_CAP;
+	}
+	if (freq > fmax_cap[FREQ_REL_CAP][cluster->id]) {
+		freq = fmax_cap[FREQ_REL_CAP][cluster->id];
+		wg_driv_cpu->reasons |= CPUFREQ_REASON_FREQ_REL_CAP;
+	}
 
 	if (wg_policy->cached_raw_freq && freq == wg_policy->cached_raw_freq &&
-		!wg_policy->need_freq_update)
-		return 0;
+		!wg_policy->need_freq_update) {
+		final_freq = 0;
+		goto out;
+	}
 
 	wg_policy->need_freq_update = false;
 
 	final_freq = cpufreq_driver_resolve_freq(policy, freq);
 
-	if (!waltgov_update_next_freq(wg_policy, time, final_freq, freq))
-		return 0;
+	if (!waltgov_update_next_freq(wg_policy, time, final_freq, freq)) {
+		final_freq = 0;
+		goto out;
+	}
+out:
+	trace_waltgov_next_freq(policy->cpu, util, max, raw_freq, freq,
+				policy->min, policy->max,
+				wg_policy->cached_raw_freq, wg_policy->need_freq_update,
+				wg_policy->thermal_isolated,
+				wg_driv_cpu->cpu, wg_driv_cpu->reasons);
 
 	return final_freq;
 }
@@ -264,39 +357,28 @@ static unsigned long waltgov_get_util(struct waltgov_cpu *wg_cpu)
 	unsigned long util;
 
 	wg_cpu->max = max;
-	util = cpu_util_freq_walt(wg_cpu->cpu, &wg_cpu->walt_load);
+	wg_cpu->reasons = 0;
+	util = cpu_util_freq_walt(wg_cpu->cpu, &wg_cpu->walt_load, &wg_cpu->reasons);
 	return uclamp_rq_util_with(rq, util, NULL);
 }
 
 #define NL_RATIO 75
 #define DEFAULT_HISPEED_LOAD 90
-#define DEFAULT_CPU0_RTG_BOOST_FREQ 1000000
-#define DEFAULT_CPU4_RTG_BOOST_FREQ 768000
-#define DEFAULT_CPU7_RTG_BOOST_FREQ 0
-
-static int find_target_boost(unsigned long util, struct waltgov_policy *wg_policy,
-				unsigned long *min_util)
-{
-	int i, ret;
-	unsigned long flags;
-
-	spin_lock_irqsave(&wg_policy->tunables->target_loads_lock, flags);
-	for (i = 0; i < wg_policy->tunables->ntarget_loads - 1 &&
-				util >= wg_policy->tunables->target_loads[i+1]; i += 2)
-		;
-	ret = wg_policy->tunables->target_loads[i];
-	if (i == 0)
-		*min_util = 0;
-	else
-		*min_util = wg_policy->tunables->target_loads[i-1];
-
-	spin_unlock_irqrestore(&wg_policy->tunables->target_loads_lock, flags);
-
-	return ret;
-}
-
+#define DEFAULT_SILVER_RTG_BOOST_FREQ 1000000
+#define DEFAULT_GOLD_RTG_BOOST_FREQ 768000
+#define DEFAULT_PRIME_RTG_BOOST_FREQ 0
 #define DEFAULT_TARGET_LOAD_THRESH 1024
 #define DEFAULT_TARGET_LOAD_SHIFT 4
+static inline void max_and_reason(unsigned long *cur_util, unsigned long boost_util,
+		struct waltgov_cpu *wg_cpu, unsigned int reason)
+{
+	if (boost_util && boost_util >= *cur_util) {
+		*cur_util = boost_util;
+		wg_cpu->reasons = reason;
+		wg_cpu->wg_policy->driving_cpu = wg_cpu->cpu;
+	}
+}
+
 static void waltgov_walt_adjust(struct waltgov_cpu *wg_cpu, unsigned long cpu_util,
 				unsigned long nl, unsigned long *util,
 				unsigned long *max)
@@ -305,32 +387,35 @@ static void waltgov_walt_adjust(struct waltgov_cpu *wg_cpu, unsigned long cpu_ut
 	bool is_migration = wg_cpu->flags & WALT_CPUFREQ_IC_MIGRATION;
 	bool is_rtg_boost = wg_cpu->walt_load.rtgb_active;
 	bool is_hiload;
+	bool employ_ed_boost = wg_cpu->walt_load.ed_active && sysctl_ed_boost_pct;
 	unsigned long pl = wg_cpu->walt_load.pl;
-	unsigned long min_util;
-	int target_boost;
 
-	target_boost = 100 + find_target_boost(*util, wg_policy, &min_util);
-	*util = mult_frac(*util, target_boost, 100);
-	*util = max(*util, min_util);
-
-	if (is_rtg_boost)
-		*util = max(*util, wg_policy->rtg_boost_util);
+	if (is_rtg_boost && (!cpumask_test_cpu(wg_cpu->cpu, cpu_partial_halt_mask) ||
+				!is_state1()))
+		max_and_reason(util, wg_policy->rtg_boost_util, wg_cpu, CPUFREQ_REASON_RTG_BOOST);
 
 	is_hiload = (cpu_util >= mult_frac(wg_policy->avg_cap,
 					   wg_policy->tunables->hispeed_load,
 					   100));
 
+	if (cpumask_test_cpu(wg_cpu->cpu, cpu_partial_halt_mask) &&
+			is_state1())
+		is_hiload = false;
+
 	if (is_hiload && !is_migration)
-		*util = max(*util, wg_policy->hispeed_util);
+		max_and_reason(util, wg_policy->hispeed_util, wg_cpu, CPUFREQ_REASON_HISPEED);
 
 	if (is_hiload && nl >= mult_frac(cpu_util, NL_RATIO, 100))
-		*util = *max;
+		max_and_reason(util, *max, wg_cpu, CPUFREQ_REASON_NWD);
 
 	if (wg_policy->tunables->pl) {
 		if (sysctl_sched_conservative_pl)
 			pl = mult_frac(pl, TARGET_LOAD, 100);
-		*util = max(*util, pl);
+		max_and_reason(util, pl, wg_cpu, CPUFREQ_REASON_PL);
 	}
+
+	if (employ_ed_boost)
+		wg_cpu->reasons |= CPUFREQ_REASON_EARLY_DET;
 }
 
 static inline unsigned long target_util(struct waltgov_policy *wg_policy,
@@ -340,7 +425,7 @@ static inline unsigned long target_util(struct waltgov_policy *wg_policy,
 
 	util = freq_to_util(wg_policy, freq);
 
-	if (wg_policy->max == min_max_possible_capacity &&
+	if (is_min_possible_cluster_cpu(wg_policy->policy->cpu) &&
 		util >= wg_policy->tunables->target_load_thresh)
 		util = mult_frac(util, 94, 100);
 	else
@@ -379,6 +464,7 @@ static unsigned int waltgov_next_freq_shared(struct waltgov_cpu *wg_cpu, u64 tim
 		if (j_util * max >= j_max * util) {
 			util = j_util;
 			max = j_max;
+			wg_policy->driving_cpu = j;
 		}
 
 		waltgov_walt_adjust(j_wg_cpu, j_util, j_nl, &util, &max);
@@ -447,7 +533,7 @@ static void waltgov_work(struct kthread_work *work)
 	raw_spin_lock_irqsave(&wg_policy->update_lock, flags);
 	freq = wg_policy->next_freq;
 	waltgov_track_cycles(wg_policy, wg_policy->policy->cur,
-			   ktime_get_ns());
+			   walt_sched_clock());
 	raw_spin_unlock_irqrestore(&wg_policy->update_lock, flags);
 
 	mutex_lock(&wg_policy->work_lock);
@@ -638,123 +724,6 @@ static ssize_t pl_store(struct gov_attr_set *attr_set, const char *buf,
 	return count;
 }
 
-static unsigned int *get_tokenized_data(const char *buf, int *num_tokens)
-{
-	const char *cp;
-	char *ptr, *ptr_bak, *token;
-	int i = 0, len = 0;
-	int ntokens = 1;
-	int *tokenized_data;
-	int err = -EINVAL;
-
-	cp = buf;
-	while ((cp = strpbrk(cp + 1, " :")))
-		ntokens++;
-
-	if (!(ntokens & 0x1))
-		goto err;
-
-	tokenized_data = kmalloc_array(ntokens, sizeof(int), GFP_KERNEL);
-	if (!tokenized_data) {
-		err = -ENOMEM;
-		goto err;
-	}
-
-	len = strlen(buf) + 1;
-	ptr = ptr_bak = kmalloc(len, GFP_KERNEL);
-	if (!ptr) {
-		kfree(tokenized_data);
-		err = -ENOMEM;
-		goto err;
-	}
-
-	memcpy(ptr, buf, len);
-	token = strsep(&ptr, " :");
-	while (token != NULL) {
-		if (kstrtoint(token, 10, &tokenized_data[i++]))
-			goto err_kfree;
-		token = strsep(&ptr, " :");
-	}
-
-	if (i != ntokens)
-		goto err_kfree;
-	kfree(ptr_bak);
-
-	*num_tokens = ntokens;
-	return tokenized_data;
-
-err_kfree:
-	kfree(ptr_bak);
-	kfree(tokenized_data);
-err:
-	return ERR_PTR(err);
-}
-
-static ssize_t target_loads_show(struct gov_attr_set *attr_set, char *buf)
-{
-	int i;
-	int tmp;
-	ssize_t ret = 0;
-	unsigned long flags;
-	struct waltgov_policy *wg_policy;
-	struct waltgov_tunables *tunables = to_waltgov_tunables(attr_set);
-
-	spin_lock_irqsave(&tunables->target_loads_lock, flags);
-
-	for (i = 0; i < tunables->ntarget_loads; i++) {
-		list_for_each_entry(wg_policy, &attr_set->policy_list, tunables_hook) {
-			if (i & 0x1)
-				tmp = map_util_freq(tunables->target_loads[i],
-							wg_policy->policy->cpuinfo.max_freq,
-							wg_policy->max);
-			else
-				tmp = tunables->target_loads[i];
-		}
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%d%s",
-					tmp, i & 0x1 ? ":" : " ");
-	}
-	scnprintf(buf + ret - 1, PAGE_SIZE - (ret - 1), "\n");
-	spin_unlock_irqrestore(&tunables->target_loads_lock, flags);
-
-	return ret;
-}
-
-static ssize_t target_loads_store(struct gov_attr_set *attr_set, const char *buf,
-				   size_t count)
-{
-	int i;
-	int ntokens;
-	unsigned long util;
-	unsigned long flags;
-	struct waltgov_policy *wg_policy;
-	int *new_target_loads = NULL;
-	struct waltgov_tunables *tunables = to_waltgov_tunables(attr_set);
-
-	new_target_loads = get_tokenized_data(buf, &ntokens);
-	if (IS_ERR(new_target_loads))
-		return PTR_ERR_OR_ZERO(new_target_loads);
-
-	spin_lock_irqsave(&tunables->target_loads_lock, flags);
-	if (tunables->target_loads != default_target_loads)
-		kfree(tunables->target_loads);
-
-	for (i = 0; i < ntokens; i++) {
-		list_for_each_entry(wg_policy, &attr_set->policy_list, tunables_hook) {
-			if (i % 2) {
-				util = target_util(wg_policy, new_target_loads[i]);
-				new_target_loads[i] = util;
-			}
-		}
-
-	}
-
-	tunables->target_loads = new_target_loads;
-	tunables->ntarget_loads = ntokens;
-	spin_unlock_irqrestore(&tunables->target_loads_lock, flags);
-
-	return count;
-}
-
 static ssize_t boost_show(struct gov_attr_set *attr_set, char *buf)
 {
 	struct waltgov_tunables *tunables = to_waltgov_tunables(attr_set);
@@ -780,12 +749,110 @@ static ssize_t boost_store(struct gov_attr_set *attr_set, const char *buf,
 		struct rq *rq = cpu_rq(wg_policy->policy->cpu);
 		unsigned long flags;
 
-		raw_spin_lock_irqsave(&rq->lock, flags);
+		raw_spin_lock_irqsave(&rq->__lock, flags);
 		waltgov_run_callback(rq, WALT_CPUFREQ_BOOST_UPDATE);
-		raw_spin_unlock_irqrestore(&rq->lock, flags);
+		raw_spin_unlock_irqrestore(&rq->__lock, flags);
 	}
 	return count;
 }
+
+/**
+ * cpufreq_walt_set_adaptive_freq() - set the waltgov adaptive freq for cpu
+ * @cpu:               the cpu for which the values should be set
+ * @adaptive_low_freq: low freq
+ * @adaptive_high_freq:high_freq
+ *
+ * Configure the adaptive_low/high_freq for the cpu specified. This will impact all
+ * cpus governed by the policy (e.g. all cpus in a cluster). The actual value used
+ * for adaptive frequencies will be governed by the user space setting for the
+ * policy, and this value.
+ *
+ * Return: 0 if successful, error otherwise
+ */
+int cpufreq_walt_set_adaptive_freq(unsigned int cpu, unsigned int adaptive_low_freq,
+				   unsigned int adaptive_high_freq)
+{
+	struct waltgov_cpu *wg_cpu = &per_cpu(waltgov_cpu, cpu);
+	struct waltgov_policy *wg_policy;
+	struct cpufreq_policy *policy;
+
+	if (unlikely(walt_disabled))
+		return -EAGAIN;
+
+	if (!cpu_possible(cpu))
+		return -EFAULT;
+
+	wg_policy = wg_cpu->wg_policy;
+	policy = wg_policy->policy;
+	if (policy->min <= adaptive_low_freq && policy->max >= adaptive_high_freq) {
+		wg_policy->tunables->adaptive_low_freq_kernel = adaptive_low_freq;
+		wg_policy->tunables->adaptive_high_freq_kernel = adaptive_high_freq;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+EXPORT_SYMBOL_GPL(cpufreq_walt_set_adaptive_freq);
+
+/**
+ * cpufreq_walt_get_adaptive_freq() - get the waltgov adaptive freq for cpu
+ * @cpu:               the cpu for which the values should be returned
+ * @adaptive_low_freq: pointer to write the current kernel adaptive_low_freq value
+ * @adaptive_high_freq:pointer to write the current kernel adaptive_high_freq value
+ *
+ * Get the currently active adaptive_low/high_freq for the cpu specified.
+ *
+ * Return: 0 if successful, error otherwise
+ */
+int cpufreq_walt_get_adaptive_freq(unsigned int cpu, unsigned int *adaptive_low_freq,
+				   unsigned int *adaptive_high_freq)
+{
+	struct waltgov_cpu *wg_cpu = &per_cpu(waltgov_cpu, cpu);
+	struct waltgov_policy *wg_policy;
+
+	if (unlikely(walt_disabled))
+		return -EAGAIN;
+
+	if (!cpu_possible(cpu))
+		return -EFAULT;
+
+	wg_policy = wg_cpu->wg_policy;
+	if (adaptive_low_freq && adaptive_high_freq) {
+		*adaptive_low_freq = get_adaptive_low_freq(wg_policy);
+		*adaptive_high_freq = get_adaptive_high_freq(wg_policy);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+EXPORT_SYMBOL_GPL(cpufreq_walt_get_adaptive_freq);
+
+/**
+ * cpufreq_walt_reset_adaptive_freq() - reset the waltgov adaptive freq for cpu
+ * @cpu:               the cpu for which the values should be set
+ *
+ * Reset the kernel adaptive_low/high_freq to zero.
+ *
+ * Return: 0 if successful, error otherwise
+ */
+int cpufreq_walt_reset_adaptive_freq(unsigned int cpu)
+{
+	struct waltgov_cpu *wg_cpu = &per_cpu(waltgov_cpu, cpu);
+	struct waltgov_policy *wg_policy;
+
+	if (unlikely(walt_disabled))
+		return -EAGAIN;
+
+	if (!cpu_possible(cpu))
+		return -EFAULT;
+
+	wg_policy = wg_cpu->wg_policy;
+	wg_policy->tunables->adaptive_low_freq_kernel = 0;
+	wg_policy->tunables->adaptive_high_freq_kernel = 0;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cpufreq_walt_reset_adaptive_freq);
 
 #define WALTGOV_ATTR_RW(_name)						\
 static struct governor_attr _name =					\
@@ -815,29 +882,48 @@ store_attr(adaptive_low_freq);
 show_attr(adaptive_high_freq);
 store_attr(adaptive_high_freq);
 show_attr(target_load_thresh);
-store_attr(target_load_thresh);
 show_attr(target_load_shift);
 store_attr(target_load_shift);
+
+static ssize_t store_target_load_thresh(struct gov_attr_set *attr_set,
+				const char *buf, size_t count)
+{
+	struct waltgov_tunables *tunables = to_waltgov_tunables(attr_set);
+	struct waltgov_policy *wg_policy;
+
+	if (kstrtouint(buf, 10, &tunables->target_load_thresh))
+		return -EINVAL;
+
+	list_for_each_entry(wg_policy, &attr_set->policy_list, tunables_hook) {
+		unsigned long flags;
+
+		raw_spin_lock_irqsave(&wg_policy->update_lock, flags);
+		wg_policy->hispeed_util = target_util(wg_policy,
+						wg_policy->tunables->hispeed_freq);
+		wg_policy->rtg_boost_util = target_util(wg_policy,
+						wg_policy->tunables->rtg_boost_freq);
+		raw_spin_unlock_irqrestore(&wg_policy->update_lock, flags);
+	}
+	return count;
+}
 
 static struct governor_attr hispeed_load = __ATTR_RW(hispeed_load);
 static struct governor_attr hispeed_freq = __ATTR_RW(hispeed_freq);
 static struct governor_attr rtg_boost_freq = __ATTR_RW(rtg_boost_freq);
 static struct governor_attr pl = __ATTR_RW(pl);
-static struct governor_attr target_loads = __ATTR_RW(target_loads);
 static struct governor_attr boost = __ATTR_RW(boost);
 WALTGOV_ATTR_RW(adaptive_low_freq);
 WALTGOV_ATTR_RW(adaptive_high_freq);
 WALTGOV_ATTR_RW(target_load_thresh);
 WALTGOV_ATTR_RW(target_load_shift);
 
-static struct attribute *waltgov_attributes[] = {
+static struct attribute *waltgov_attrs[] = {
 	&up_rate_limit_us.attr,
 	&down_rate_limit_us.attr,
 	&hispeed_load.attr,
 	&hispeed_freq.attr,
 	&rtg_boost_freq.attr,
 	&pl.attr,
-	&target_loads.attr,
 	&boost.attr,
 	&adaptive_low_freq.attr,
 	&adaptive_high_freq.attr,
@@ -845,9 +931,10 @@ static struct attribute *waltgov_attributes[] = {
 	&target_load_shift.attr,
 	NULL
 };
+ATTRIBUTE_GROUPS(waltgov);
 
 static struct kobj_type waltgov_tunables_ktype = {
-	.default_attrs	= waltgov_attributes,
+	.default_groups = waltgov_groups,
 	.sysfs_ops	= &governor_sysfs_ops,
 };
 
@@ -876,7 +963,7 @@ static void waltgov_policy_free(struct waltgov_policy *wg_policy)
 static int waltgov_kthread_create(struct waltgov_policy *wg_policy)
 {
 	struct task_struct *thread;
-	struct sched_param param = { .sched_priority = MAX_USER_RT_PRIO / 2 };
+	struct sched_param param = { .sched_priority = MAX_RT_PRIO / 2 };
 	struct cpufreq_policy *policy = wg_policy->policy;
 	int ret;
 
@@ -946,6 +1033,8 @@ static void waltgov_tunables_save(struct cpufreq_policy *policy,
 	cached->boost = tunables->boost;
 	cached->adaptive_low_freq = tunables->adaptive_low_freq;
 	cached->adaptive_high_freq = tunables->adaptive_high_freq;
+	cached->adaptive_low_freq_kernel = tunables->adaptive_low_freq_kernel;
+	cached->adaptive_high_freq_kernel = tunables->adaptive_high_freq_kernel;
 	cached->target_load_thresh = tunables->target_load_thresh;
 	cached->target_load_shift = tunables->target_load_shift;
 }
@@ -968,10 +1057,13 @@ static void waltgov_tunables_restore(struct cpufreq_policy *policy)
 	tunables->boost	= cached->boost;
 	tunables->adaptive_low_freq = cached->adaptive_low_freq;
 	tunables->adaptive_high_freq = cached->adaptive_high_freq;
+	tunables->adaptive_low_freq_kernel = cached->adaptive_low_freq_kernel;
+	tunables->adaptive_high_freq_kernel = cached->adaptive_high_freq_kernel;
 	tunables->target_load_thresh = cached->target_load_thresh;
 	tunables->target_load_shift = cached->target_load_shift;
 }
 
+bool waltgov_disabled = true;
 static int waltgov_init(struct cpufreq_policy *policy)
 {
 	struct waltgov_policy *wg_policy;
@@ -1005,24 +1097,15 @@ static int waltgov_init(struct cpufreq_policy *policy)
 
 	gov_attr_set_init(&tunables->attr_set, &wg_policy->tunables_hook);
 	tunables->hispeed_load = DEFAULT_HISPEED_LOAD;
-	spin_lock_init(&tunables->target_loads_lock);
-	tunables->target_loads = default_target_loads;
-	tunables->ntarget_loads = ARRAY_SIZE(default_target_loads);
 	tunables->target_load_thresh = DEFAULT_TARGET_LOAD_THRESH;
 	tunables->target_load_shift = DEFAULT_TARGET_LOAD_SHIFT;
 
-	switch (policy->cpu) {
-	default:
-	case 0:
-		tunables->rtg_boost_freq = DEFAULT_CPU0_RTG_BOOST_FREQ;
-		break;
-	case 4:
-		tunables->rtg_boost_freq = DEFAULT_CPU4_RTG_BOOST_FREQ;
-		break;
-	case 7:
-		tunables->rtg_boost_freq = DEFAULT_CPU7_RTG_BOOST_FREQ;
-		break;
-	}
+	if (is_min_possible_cluster_cpu(policy->cpu))
+		tunables->rtg_boost_freq = DEFAULT_SILVER_RTG_BOOST_FREQ;
+	else if (is_max_possible_cluster_cpu(policy->cpu))
+		tunables->rtg_boost_freq = DEFAULT_PRIME_RTG_BOOST_FREQ;
+	else
+		tunables->rtg_boost_freq = DEFAULT_GOLD_RTG_BOOST_FREQ;
 
 	policy->governor_data = wg_policy;
 	wg_policy->tunables = tunables;
@@ -1099,6 +1182,7 @@ static int waltgov_start(struct cpufreq_policy *policy)
 		waltgov_add_callback(cpu, &wg_cpu->cb, waltgov_update_freq);
 	}
 
+	waltgov_disabled = false;
 	return 0;
 }
 
@@ -1116,6 +1200,8 @@ static void waltgov_stop(struct cpufreq_policy *policy)
 		irq_work_sync(&wg_policy->irq_work);
 		kthread_cancel_work_sync(&wg_policy->work);
 	}
+
+	waltgov_disabled = true;
 }
 
 static void waltgov_limits(struct cpufreq_policy *policy)
@@ -1128,24 +1214,24 @@ static void waltgov_limits(struct cpufreq_policy *policy)
 		mutex_lock(&wg_policy->work_lock);
 		raw_spin_lock_irqsave(&wg_policy->update_lock, flags);
 		waltgov_track_cycles(wg_policy, wg_policy->policy->cur,
-				   ktime_get_ns());
+				   walt_sched_clock());
 		raw_spin_unlock_irqrestore(&wg_policy->update_lock, flags);
 		cpufreq_policy_apply_limits(policy);
 		mutex_unlock(&wg_policy->work_lock);
 	} else {
 		raw_spin_lock_irqsave(&wg_policy->update_lock, flags);
-		freq = policy->cur;
-		now = ktime_get_ns();
-
-		/*
-		 * cpufreq_driver_resolve_freq() has a clamp, so we do not need
-		 * to do any sort of additional validation here.
-		 */
-		final_freq = cpufreq_driver_resolve_freq(policy, freq);
-
-		if (waltgov_update_next_freq(wg_policy, now, final_freq,
-			final_freq)) {
-			waltgov_fast_switch(wg_policy, now, final_freq);
+		if (!wg_policy->thermal_isolated) {
+			freq = policy->cur;
+			now = walt_sched_clock();
+			/*
+			 * cpufreq_driver_resolve_freq() has a clamp, so we do not need
+			 * to do any sort of additional validation here.
+			 */
+			final_freq = cpufreq_driver_resolve_freq(policy, freq);
+			if (wg_policy->next_freq != final_freq) {
+				__waltgov_update_next_freq(wg_policy, now, final_freq, final_freq);
+				waltgov_fast_switch(wg_policy, now, final_freq);
+			}
 		}
 		raw_spin_unlock_irqrestore(&wg_policy->update_lock, flags);
 	}

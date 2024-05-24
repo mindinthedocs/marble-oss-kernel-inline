@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
-#include "walt.h"
+#include <trace/hooks/sched.h>
 
-static int neg_three = -3;
-static int three = 3;
+#include "walt.h"
+#include "trace.h"
+
+static int neg_four = -4;
+static int four = 4;
 static int two_hundred_fifty_five = 255;
 static unsigned int ns_per_sec = NSEC_PER_SEC;
 static unsigned int one_hundred_thousand = 100000;
 static unsigned int two_hundred_million = 200000000;
 static int __maybe_unused two = 2;
-static int __maybe_unused four = 4;
 static int one_hundred = 100;
 static int one_thousand = 1000;
+static int one_thousand_twenty_four = 1024;
+static int two_thousand = 2000;
+static int walt_max_cpus = WALT_NR_CPUS;
 
 /*
  * CFS task prio range is [100 ... 139]
@@ -42,7 +48,8 @@ unsigned int sysctl_sched_wake_up_idle[2];
 unsigned int sysctl_input_boost_ms;
 unsigned int sysctl_input_boost_freq[8];
 unsigned int sysctl_sched_boost_on_input;
-int sysctl_cluster_arr[3][15];
+unsigned int sysctl_sched_early_up[MAX_MARGIN_LEVELS];
+unsigned int sysctl_sched_early_down[MAX_MARGIN_LEVELS];
 
 /* sysctl nodes accesed by other files */
 unsigned int __read_mostly sysctl_sched_coloc_downmigrate_ns;
@@ -52,7 +59,6 @@ unsigned int __read_mostly sysctl_sched_window_stats_policy;
 unsigned int sysctl_sched_ravg_window_nr_ticks;
 unsigned int sysctl_sched_walt_rotate_big_tasks;
 unsigned int sysctl_sched_task_unfilter_period;
-unsigned int __read_mostly sysctl_sched_asym_cap_sibling_freq_match_pct;
 unsigned int sysctl_walt_low_latency_task_threshold; /* disabled by default */
 unsigned int sysctl_sched_conservative_pl;
 unsigned int sysctl_sched_min_task_util_for_boost = 51;
@@ -62,16 +68,134 @@ unsigned int sysctl_sched_many_wakeup_threshold = WALT_MANY_WAKEUP_DEFAULT;
 const int sched_user_hint_max = 1000;
 unsigned int sysctl_walt_rtg_cfs_boost_prio = 99; /* disabled by default */
 unsigned int sysctl_sched_sync_hint_enable = 1;
-unsigned int sysctl_sched_bug_on_rt_throttle;
-unsigned int sysctl_panic_on_walt_bug;
+unsigned int sysctl_panic_on_walt_bug = walt_debug_initial_values();
 unsigned int sysctl_sched_suppress_region2;
 unsigned int sysctl_sched_skip_sp_newly_idle_lb = 1;
 unsigned int sysctl_sched_hyst_min_coloc_ns = 80000000;
 unsigned int sysctl_sched_asymcap_boost;
+unsigned int sysctl_sched_long_running_rt_task_ms;
+unsigned int sysctl_sched_idle_enough = SCHED_IDLE_ENOUGH_DEFAULT;
+unsigned int sysctl_sched_cluster_util_thres_pct = SCHED_CLUSTER_UTIL_THRES_PCT_DEFAULT;
+unsigned int sysctl_sched_idle_enough_clust[MAX_CLUSTERS];
+unsigned int sysctl_sched_cluster_util_thres_pct_clust[MAX_CLUSTERS];
+unsigned int sysctl_ed_boost_pct;
+unsigned int sysctl_em_inflate_pct = 100;
+unsigned int sysctl_em_inflate_thres = 1024;
+unsigned int sysctl_sched_heavy_nr;
+unsigned int sysctl_max_freq_partial_halt = FREQ_QOS_MAX_DEFAULT_VALUE;
+unsigned int sysctl_fmax_cap[MAX_CLUSTERS];
+unsigned int sysctl_sched_sbt_pause_cpus;
+unsigned int sysctl_sched_sbt_enable = 1;
+unsigned int sysctl_sched_sbt_delay_windows;
+unsigned int high_perf_cluster_freq_cap[MAX_CLUSTERS];
+unsigned int sysctl_sched_pipeline_cpus;
+unsigned int fmax_cap[MAX_FREQ_CAP][MAX_CLUSTERS];
+/* Entries for 4 clusters and 10 tuples(3 item in each tuple */
+unsigned int sysctl_cluster_arr[4][MAX_FREQ_RELATIONS * TUPLE_SIZE] = {
+					[0] = {0, 0, 0},
+					[1] = {0, 0, 0},
+					[2] = {0, 0, 0},
+					[3] = {0, 0, 0},
+};
+struct freq_relation_map relation_data[MAX_CLUSTERS][MAX_FREQ_RELATIONS];
 
-struct cluster_freq_relation cluster_arr[3][5];
 /* range is [1 .. INT_MAX] */
 static int sysctl_task_read_pid = 1;
+
+static int sched_freq_map_handler(struct ctl_table *table, int write,
+					       void __user *buffer, size_t *lenp,
+					       loff_t *ppos)
+{
+	int i, idx = 0, ret = -EPERM;
+	unsigned int *data = (unsigned int *)table->data;
+	static DEFINE_MUTEX(ignore_cluster_mutex);
+	static int configured[MAX_CLUSTERS] = {0};
+	int index;
+	unsigned int val[MAX_FREQ_RELATIONS * TUPLE_SIZE];
+	unsigned int src_cluster_fmax;
+	unsigned int cluster_freq[MAX_CLUSTERS] = {0};
+	struct ctl_table tmp = {
+		.data	= &val,
+		.maxlen	= sizeof(unsigned int) * MAX_FREQ_RELATIONS * TUPLE_SIZE,
+		.mode	= table->mode,
+	};
+
+	if (num_sched_clusters <= 1)
+		return ret;
+
+	index = (data == sysctl_cluster_arr[0]) ? 0 : (data == sysctl_cluster_arr[1]) ?
+				1 : (data == sysctl_cluster_arr[2]) ? 2 : 3;
+
+	/* we are not allowing prime to have any relations for now */
+	if (index >= num_sched_clusters - 1)
+		return ret;
+
+	mutex_lock(&ignore_cluster_mutex);
+	if (!write) {
+		ret = proc_dointvec(table, write, buffer, lenp, ppos);
+		goto unlock;
+	}
+
+	/* updation allowed only once */
+	if (configured[index])
+		goto unlock;
+
+	ret = proc_dointvec(&tmp, write, buffer, lenp, ppos);
+	if (ret)
+		goto unlock;
+
+	src_cluster_fmax = sched_cluster[index]->max_possible_freq;
+	configured[index]  = 1;
+	/*
+	 * tuple format:
+	 * <a b c>:
+	 *	a : source cluster frequency
+	 *	b : first cpu of target cluster
+	 *	c : target cluster frequency
+	 */
+	for (i = 0; i < MAX_FREQ_RELATIONS; i++) {
+		int tgt_cluster_id;
+
+		idx = i * 3;
+
+		if ((val[idx + 0] == 0) || (val[idx + 1] >= cpumask_weight(cpu_possible_mask)) ||
+			(val[idx + 2] == 0))
+			break;
+
+		tgt_cluster_id = cpu_cluster(val[idx + 1])->id;
+
+		/* target cpu cannot be of same/lower cluster */
+		if (tgt_cluster_id <= index)
+			break;
+
+		/* frequency should be always same or increasing */
+		if (cluster_freq[index] > val[idx + 0])
+			break;
+		cluster_freq[index] = val[idx + 0];
+
+		if (cluster_freq[tgt_cluster_id] >= val[idx + 2])
+			break;
+		cluster_freq[tgt_cluster_id] = val[idx + 2];
+
+
+		relation_data[index][i].src_freq = data[idx + 0] = val[idx + 0];
+		relation_data[index][i].target_cluster_cpu = data[idx + 1] = val[idx + 1];
+		relation_data[index][i].tgt_freq = data[idx + 2] = val[idx + 2];
+	}
+
+	for (; i < MAX_FREQ_RELATIONS; i++) {
+		idx = i * 3;
+		relation_data[index][i].src_freq = data[idx + 0] = FREQ_QOS_MAX_DEFAULT_VALUE;
+		relation_data[index][i].target_cluster_cpu = data[idx + 1] = -1;
+		relation_data[index][i].tgt_freq = data[idx + 2] = FREQ_QOS_MAX_DEFAULT_VALUE;
+	}
+
+	update_freq_relation(sched_cluster[index]);
+
+unlock:
+	mutex_unlock(&ignore_cluster_mutex);
+	return ret;
+}
 
 static int walt_proc_group_thresholds_handler(struct ctl_table *table, int write,
 				       void __user *buffer, size_t *lenp,
@@ -98,9 +222,9 @@ static int walt_proc_group_thresholds_handler(struct ctl_table *table, int write
 	 * updating the thresholds is sufficient for
 	 * an atomic update.
 	 */
-	raw_spin_lock_irqsave(&rq->lock, flags);
+	raw_spin_lock_irqsave(&rq->__lock, flags);
 	walt_update_group_thresholds();
-	raw_spin_unlock_irqrestore(&rq->lock, flags);
+	raw_spin_unlock_irqrestore(&rq->__lock, flags);
 
 	mutex_unlock(&mutex);
 
@@ -125,6 +249,75 @@ static int walt_proc_user_hint_handler(struct ctl_table *table,
 	sched_user_hint_reset_time = jiffies + HZ;
 	walt_irq_work_queue(&walt_migration_irq_work);
 
+unlock:
+	mutex_unlock(&mutex);
+	return ret;
+}
+
+DECLARE_BITMAP(sysctl_bitmap, WALT_NR_CPUS);
+
+static int walt_proc_sbt_pause_handler(struct ctl_table *table,
+				       int write, void __user *buffer, size_t *lenp,
+				       loff_t *ppos)
+{
+	int ret = 0;
+	unsigned int old_value;
+	unsigned long bitmask;
+	const unsigned long *bitmaskp = &bitmask;
+	static bool written_once;
+	static DEFINE_MUTEX(mutex);
+
+	mutex_lock(&mutex);
+
+	old_value = sysctl_sched_sbt_pause_cpus;
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret || !write || (old_value == sysctl_sched_sbt_pause_cpus))
+		goto unlock;
+
+	if (written_once) {
+		sysctl_sched_sbt_pause_cpus = old_value;
+		goto unlock;
+	}
+
+	bitmask = (unsigned long)sysctl_sched_sbt_pause_cpus;
+	bitmap_copy(sysctl_bitmap, bitmaskp, WALT_NR_CPUS);
+	cpumask_copy(&cpus_for_sbt_pause, to_cpumask(sysctl_bitmap));
+
+	written_once = true;
+unlock:
+	mutex_unlock(&mutex);
+	return ret;
+}
+
+/* pipeline cpus are non-prime cpus chosen to handle pipeline tasks, e.g. golds */
+static int walt_proc_pipeline_cpus_handler(struct ctl_table *table,
+					   int write, void __user *buffer, size_t *lenp,
+					   loff_t *ppos)
+{
+	int ret = 0;
+	unsigned int old_value;
+	unsigned long bitmask;
+	const unsigned long *bitmaskp = &bitmask;
+	static bool written_once;
+	static DEFINE_MUTEX(mutex);
+
+	mutex_lock(&mutex);
+
+	old_value = sysctl_sched_pipeline_cpus;
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret || !write || (old_value == sysctl_sched_pipeline_cpus))
+		goto unlock;
+
+	if (written_once) {
+		sysctl_sched_pipeline_cpus = old_value;
+		goto unlock;
+	}
+
+	bitmask = (unsigned long)sysctl_sched_pipeline_cpus;
+	bitmap_copy(sysctl_bitmap, bitmaskp, WALT_NR_CPUS);
+	cpumask_copy(&cpus_for_pipeline, to_cpumask(sysctl_bitmap));
+
+	written_once = true;
 unlock:
 	mutex_unlock(&mutex);
 	return ret;
@@ -190,6 +383,8 @@ enum {
 	PER_TASK_BOOST_PERIOD_MS,
 	LOW_LATENCY,
 	PIPELINE,
+	LOAD_BOOST,
+	REDUCE_AFFINITY,
 };
 
 static int sched_task_handler(struct ctl_table *table, int write,
@@ -201,6 +396,10 @@ static int sched_task_handler(struct ctl_table *table, int write,
 	int pid_and_val[2] = {-1, -1};
 	int val;
 	struct walt_task_struct *wts;
+	struct rq *rq;
+	struct rq_flags rf;
+	unsigned long bitmask;
+	const unsigned long *bitmaskp = &bitmask;
 
 	struct ctl_table tmp = {
 		.data	= &pid_and_val,
@@ -246,6 +445,12 @@ static int sched_task_handler(struct ctl_table *table, int write,
 			pid_and_val[1] = wts->low_latency &
 					 WALT_LOW_LATENCY_PIPELINE;
 			break;
+		case LOAD_BOOST:
+			pid_and_val[1] = wts->load_boost;
+			break;
+		case REDUCE_AFFINITY:
+			pid_and_val[1] = cpumask_bits(&wts->reduce_mask)[0];
+			break;
 		default:
 			ret = -EINVAL;
 			goto put_task;
@@ -258,7 +463,7 @@ static int sched_task_handler(struct ctl_table *table, int write,
 	if (ret)
 		goto unlock_mutex;
 
-	if (pid_and_val[0] <= 0 || pid_and_val[1] < 0) {
+	if (pid_and_val[0] <= 0) {
 		ret = -ENOENT;
 		goto unlock_mutex;
 	}
@@ -272,6 +477,10 @@ static int sched_task_handler(struct ctl_table *table, int write,
 	wts = (struct walt_task_struct *) task->android_vendor_data1;
 	param = (unsigned long)table->data;
 	val = pid_and_val[1];
+	if (param != LOAD_BOOST && val < 0) {
+		ret = -EINVAL;
+		goto put_task;
+	}
 	switch (param) {
 	case WAKE_UP_IDLE:
 		wts->wake_up_idle = val;
@@ -311,15 +520,47 @@ static int sched_task_handler(struct ctl_table *table, int write,
 			wts->low_latency &= ~WALT_LOW_LATENCY_PROCFS;
 		break;
 	case PIPELINE:
-		if (val)
+		rq = task_rq_lock(task, &rf);
+		if (READ_ONCE(task->__state) == TASK_DEAD) {
+			ret = -EINVAL;
+			task_rq_unlock(rq, task, &rf);
+			goto put_task;
+		}
+		if (val) {
+			ret = add_pipeline(wts);
+			if (ret < 0) {
+				task_rq_unlock(rq, task, &rf);
+				goto put_task;
+			}
 			wts->low_latency |= WALT_LOW_LATENCY_PIPELINE;
-		else
+		} else {
 			wts->low_latency &= ~WALT_LOW_LATENCY_PIPELINE;
+			remove_pipeline(wts);
+		}
+		task_rq_unlock(rq, task, &rf);
+		break;
+	case LOAD_BOOST:
+		if (pid_and_val[1] < -90 || pid_and_val[1] > 90) {
+			ret = -EINVAL;
+			goto put_task;
+		}
+		wts->load_boost = val;
+		if (val)
+			wts->boosted_task_load = mult_frac((int64_t)1024, (int64_t)val, 100);
+		else
+			wts->boosted_task_load = 0;
+		break;
+	case REDUCE_AFFINITY:
+		bitmask = (unsigned long) val;
+		bitmap_copy(sysctl_bitmap, bitmaskp, WALT_NR_CPUS);
+		cpumask_copy(&wts->reduce_mask, to_cpumask(sysctl_bitmap));
 		break;
 	default:
 		ret = -EINVAL;
 	}
 
+	trace_sched_task_handler(task, param, val, CALLER_ADDR0, CALLER_ADDR1,
+				CALLER_ADDR2, CALLER_ADDR3, CALLER_ADDR4, CALLER_ADDR5);
 put_task:
 	put_task_struct(task);
 unlock_mutex:
@@ -333,39 +574,26 @@ static void sched_update_updown_migrate_values(bool up)
 {
 	int i = 0, cpu;
 	struct walt_sched_cluster *cluster;
-	int cap_margin_levels = num_sched_clusters - 1;
 
-	if (cap_margin_levels > 1) {
+	for_each_sched_cluster(cluster) {
 		/*
 		 * No need to worry about CPUs in last cluster
 		 * if there are more than 2 clusters in the system
 		 */
-		for_each_sched_cluster(cluster) {
-			for_each_cpu(cpu, &cluster->cpus) {
-				if (up)
-					sched_capacity_margin_up[cpu] =
-					SCHED_FIXEDPOINT_SCALE * 100 /
-					sysctl_sched_capacity_margin_up_pct[i];
-				else
-					sched_capacity_margin_down[cpu] =
-					SCHED_FIXEDPOINT_SCALE * 100 /
-					sysctl_sched_capacity_margin_dn_pct[i];
-			}
-
-			if (++i >= cap_margin_levels)
-				break;
-		}
-	} else {
-		for_each_possible_cpu(cpu) {
+		for_each_cpu(cpu, &cluster->cpus) {
 			if (up)
 				sched_capacity_margin_up[cpu] =
-
 				SCHED_FIXEDPOINT_SCALE * 100 /
-				sysctl_sched_capacity_margin_up_pct[0];
+				sysctl_sched_capacity_margin_up_pct[i];
 			else
 				sched_capacity_margin_down[cpu] =
-				sysctl_sched_capacity_margin_dn_pct[0];
+				SCHED_FIXEDPOINT_SCALE * 100 /
+				sysctl_sched_capacity_margin_dn_pct[i];
 		}
+
+		trace_sched_update_updown_migrate_values(up, i);
+		if (++i >= num_sched_clusters - 1)
+			break;
 	}
 }
 
@@ -432,6 +660,225 @@ int sched_updown_migrate_handler(struct ctl_table *table, int write,
 
 unlock_mutex:
 	mutex_unlock(&mutex);
+
+	return ret;
+}
+
+static void sched_update_updown_early_migrate_values(bool up)
+{
+	int i = 0, cpu;
+	struct walt_sched_cluster *cluster;
+
+	for_each_sched_cluster(cluster) {
+		/*
+		 * No need to worry about CPUs in last cluster
+		 * if there are more than 2 clusters in the system
+		 */
+		for_each_cpu(cpu, &cluster->cpus) {
+			if (up)
+				sched_capacity_margin_early_up[cpu] = sysctl_sched_early_up[i];
+			else
+				sched_capacity_margin_early_down[cpu] = sysctl_sched_early_down[i];
+		}
+
+		trace_sched_update_updown_early_migrate_values(up, i);
+		if (++i >= num_sched_clusters - 1)
+			break;
+	}
+}
+
+int sched_updown_early_migrate_handler(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp,
+				loff_t *ppos)
+{
+	int ret, i;
+	unsigned int *data = (unsigned int *)table->data;
+	static DEFINE_MUTEX(mutex);
+	int cap_margin_levels = num_sched_clusters ? num_sched_clusters - 1 : 0;
+	int val[MAX_MARGIN_LEVELS];
+	struct ctl_table tmp = {
+		.data	= &val,
+		.maxlen	= sizeof(int) * cap_margin_levels,
+		.mode	= table->mode,
+	};
+
+	if (cap_margin_levels <= 0)
+		return -EINVAL;
+
+	mutex_lock(&mutex);
+
+	if (!write) {
+		ret = proc_dointvec(table, write, buffer, lenp, ppos);
+		goto unlock_mutex;
+	}
+
+	ret = proc_dointvec(&tmp, write, buffer, lenp, ppos);
+	if (ret)
+		goto unlock_mutex;
+
+	for (i = 0; i < cap_margin_levels; i++) {
+		if (val[i] < 1024) {
+			ret = -EINVAL;
+			goto unlock_mutex;
+		}
+	}
+
+	/* check up thresh is greater than dn thresh */
+	if (data == &sysctl_sched_early_up[0]) {
+		for (i = 0; i < cap_margin_levels; i++) {
+			if (val[i] >= sysctl_sched_early_down[i]) {
+				ret = -EINVAL;
+				goto unlock_mutex;
+			}
+		}
+	} else {
+		for (i = 0; i < cap_margin_levels; i++) {
+			if (sysctl_sched_early_up[i] >= val[i]) {
+				ret = -EINVAL;
+				goto unlock_mutex;
+			}
+		}
+	}
+
+	/* all things checkout update the value */
+	for (i = 0; i < cap_margin_levels; i++)
+		data[i] = val[i];
+
+	/* update individual cpu thresholds */
+	sched_update_updown_early_migrate_values(data == &sysctl_sched_early_up[0]);
+unlock_mutex:
+	mutex_unlock(&mutex);
+
+	return ret;
+}
+
+int sched_fmax_cap_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp,
+		loff_t *ppos)
+{
+	int ret, i;
+	unsigned int *data = (unsigned int *)table->data;
+	static DEFINE_MUTEX(mutex);
+	int cap_margin_levels = num_sched_clusters;
+	int val[MAX_CLUSTERS];
+	struct ctl_table tmp = {
+		.data	= &val,
+		.maxlen	= sizeof(int) * cap_margin_levels,
+		.mode	= table->mode,
+	};
+
+	if (cap_margin_levels <= 0)
+		return -EINVAL;
+
+	mutex_lock(&mutex);
+
+	if (!write) {
+		ret = proc_dointvec(table, write, buffer, lenp, ppos);
+		goto unlock_mutex;
+	}
+
+	ret = proc_dointvec(&tmp, write, buffer, lenp, ppos);
+	if (ret)
+		goto unlock_mutex;
+
+	for (i = 0; i < cap_margin_levels; i++) {
+		if (val[i] < 0) {
+			ret = -EINVAL;
+			goto unlock_mutex;
+		}
+		data[i] = val[i];
+	}
+unlock_mutex:
+	mutex_unlock(&mutex);
+	return ret;
+}
+
+static DEFINE_MUTEX(idle_enough_mutex);
+
+int sched_idle_enough_handler(struct ctl_table *table, int write,
+			      void __user *buffer, size_t *lenp,
+			      loff_t *ppos)
+{
+	int ret, i;
+
+	mutex_lock(&idle_enough_mutex);
+
+	ret = proc_douintvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret)
+		goto unlock_mutex;
+
+	/* update all per-cluster entries to match what was written */
+	for (i = 0; i < MAX_CLUSTERS; i++)
+		sysctl_sched_idle_enough_clust[i] = sysctl_sched_idle_enough;
+
+unlock_mutex:
+	mutex_unlock(&idle_enough_mutex);
+
+	return ret;
+}
+
+int sched_idle_enough_clust_handler(struct ctl_table *table, int write,
+				    void __user *buffer, size_t *lenp,
+				    loff_t *ppos)
+{
+	int ret;
+
+	mutex_lock(&idle_enough_mutex);
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret)
+		goto unlock_mutex;
+
+	/* update the single-entry to match the first cluster updated here */
+	sysctl_sched_idle_enough = sysctl_sched_idle_enough_clust[0];
+
+unlock_mutex:
+	mutex_unlock(&idle_enough_mutex);
+
+	return ret;
+}
+
+static DEFINE_MUTEX(util_thres_mutex);
+
+int sched_cluster_util_thres_pct_handler(struct ctl_table *table, int write,
+					 void __user *buffer, size_t *lenp,
+					 loff_t *ppos)
+{
+	int ret, i;
+
+	mutex_lock(&util_thres_mutex);
+
+	ret = proc_douintvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret)
+		goto unlock_mutex;
+
+	/* update all per-cluster entries to match what was written */
+	for (i = 0; i < MAX_CLUSTERS; i++)
+		sysctl_sched_cluster_util_thres_pct_clust[i] = sysctl_sched_cluster_util_thres_pct;
+
+unlock_mutex:
+	mutex_unlock(&util_thres_mutex);
+
+	return ret;
+}
+
+int sched_cluster_util_thres_pct_clust_handler(struct ctl_table *table, int write,
+					       void __user *buffer, size_t *lenp,
+					       loff_t *ppos)
+{
+	int ret;
+
+	mutex_lock(&util_thres_mutex);
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret)
+		goto unlock_mutex;
+
+	/* update the single-entry to match the first cluster updated here */
+	sysctl_sched_cluster_util_thres_pct = sysctl_sched_cluster_util_thres_pct_clust[0];
+
+unlock_mutex:
+	mutex_unlock(&util_thres_mutex);
 
 	return ret;
 }
@@ -510,8 +957,8 @@ struct ctl_table walt_table[] = {
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= sched_boost_handler,
-		.extra1		= &neg_three,
-		.extra2		= &three,
+		.extra1		= &neg_four,
+		.extra2		= &four,
 	},
 	{
 		.procname	= "sched_conservative_pl",
@@ -566,15 +1013,6 @@ struct ctl_table walt_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &one_thousand,
-	},
-	{
-		.procname	= "sched_asym_cap_sibling_freq_match_pct",
-		.data		= &sysctl_sched_asym_cap_sibling_freq_match_pct,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ONE,
-		.extra2		= &one_hundred,
 	},
 	{
 		.procname	= "sched_coloc_downmigrate_ns",
@@ -695,6 +1133,20 @@ struct ctl_table walt_table[] = {
 		.proc_handler	= sched_updown_migrate_handler,
 	},
 	{
+		.procname	= "sched_early_upmigrate",
+		.data		= &sysctl_sched_early_up,
+		.maxlen		= sizeof(unsigned int) * MAX_MARGIN_LEVELS,
+		.mode		= 0644,
+		.proc_handler	= sched_updown_early_migrate_handler,
+	},
+	{
+		.procname	= "sched_early_downmigrate",
+		.data		= &sysctl_sched_early_down,
+		.maxlen		= sizeof(unsigned int) * MAX_MARGIN_LEVELS,
+		.mode		= 0644,
+		.proc_handler	= sched_updown_early_migrate_handler,
+	},
+	{
 		.procname	= "walt_rtg_cfs_boost_prio",
 		.data		= &sysctl_walt_rtg_cfs_boost_prio,
 		.maxlen		= sizeof(unsigned int),
@@ -724,15 +1176,6 @@ struct ctl_table walt_table[] = {
 	{
 		.procname       = "sched_sync_hint_enable",
 		.data           = &sysctl_sched_sync_hint_enable,
-		.maxlen         = sizeof(unsigned int),
-		.mode           = 0644,
-		.proc_handler   = proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{
-		.procname       = "sched_bug_on_rt_throttle",
-		.data           = &sysctl_sched_bug_on_rt_throttle,
 		.maxlen         = sizeof(unsigned int),
 		.mode           = 0644,
 		.proc_handler   = proc_dointvec_minmax,
@@ -845,6 +1288,20 @@ struct ctl_table walt_table[] = {
 		.proc_handler	= sched_task_handler,
 	},
 	{
+		.procname	= "task_load_boost",
+		.data		= (int *) LOAD_BOOST,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
+		.procname	= "task_reduce_affinity",
+		.data		= (int *) REDUCE_AFFINITY,
+		.maxlen		= sizeof(unsigned int) * 2,
+		.mode		= 0644,
+		.proc_handler	= sched_task_handler,
+	},
+	{
 		.procname	= "sched_task_read_pid",
 		.data		= &sysctl_task_read_pid,
 		.maxlen		= sizeof(int),
@@ -872,8 +1329,89 @@ struct ctl_table walt_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 	{
-		.procname	= "sched_asymcap_booster",
-		.data		= &sysctl_sched_asymcap_boost,
+		.procname	= "sched_cluster_util_thres_pct",
+		.data		= &sysctl_sched_cluster_util_thres_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sched_cluster_util_thres_pct_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_cluster_util_thres_pct_clust",
+		.data		= &sysctl_sched_cluster_util_thres_pct_clust,
+		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
+		.mode		= 0644,
+		.proc_handler	= sched_cluster_util_thres_pct_clust_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_idle_enough",
+		.data		= &sysctl_sched_idle_enough,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sched_idle_enough_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_idle_enough_clust",
+		.data		= &sysctl_sched_idle_enough_clust,
+		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
+		.mode		= 0644,
+		.proc_handler	= sched_idle_enough_clust_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_long_running_rt_task_ms",
+		.data		= &sysctl_sched_long_running_rt_task_ms,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sched_long_running_rt_task_ms_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &two_thousand,
+	},
+	{
+		.procname	= "sched_ed_boost",
+		.data		= &sysctl_ed_boost_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_hundred,
+	},
+	{
+		.procname	= "sched_em_inflate_pct",
+		.data		= &sysctl_em_inflate_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &one_hundred,
+		.extra2		= &one_thousand,
+	},
+	{
+		.procname	= "sched_em_inflate_thres",
+		.data		= &sysctl_em_inflate_thres,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_thousand_twenty_four,
+	},
+	{
+		.procname	= "sched_heavy_nr",
+		.data		= &sysctl_sched_heavy_nr,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &walt_max_cpus,
+	},
+	{
+		.procname	= "sched_sbt_enable",
+		.data		= &sysctl_sched_sbt_enable,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_douintvec_minmax,
@@ -881,31 +1419,82 @@ struct ctl_table walt_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 	{
-		.procname	= "cluster0_rel",
+		.procname	= "sched_sbt_pause_cpus",
+		.data		= &sysctl_sched_sbt_pause_cpus,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= walt_proc_sbt_pause_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_sbt_delay_windows",
+		.data		= &sysctl_sched_sbt_delay_windows,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_pipeline_cpus",
+		.data		= &sysctl_sched_pipeline_cpus,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= walt_proc_pipeline_cpus_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_max_freq_partial_halt",
+		.data		= &sysctl_max_freq_partial_halt,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_fmax_cap",
+		.data		= &sysctl_fmax_cap,
+		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
+		.mode		= 0644,
+		.proc_handler	= sched_fmax_cap_handler,
+	},
+	{
+		.procname	= "sched_high_perf_cluster_freq_cap",
+		.data		= &high_perf_cluster_freq_cap,
+		.maxlen		= sizeof(unsigned int) * MAX_CLUSTERS,
+		.mode		= 0644,
+		.proc_handler	= sched_fmax_cap_handler,
+	},
+	{
+		.procname	= "sched_cluster0_freq_map",
 		.data		= sysctl_cluster_arr[0],
-		.maxlen		= sizeof(int) * 15,
+		.maxlen		= sizeof(int) * MAX_FREQ_RELATIONS * TUPLE_SIZE,
 		.mode		= 0644,
-		.proc_handler	= sched_ignore_cluster_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX,
+		.proc_handler	= sched_freq_map_handler,
 	},
 	{
-		.procname	= "cluster1_rel",
+		.procname	= "sched_cluster1_freq_map",
 		.data		= sysctl_cluster_arr[1],
-		.maxlen		= sizeof(int) * 15,
+		.maxlen		= sizeof(int) * MAX_FREQ_RELATIONS * TUPLE_SIZE,
 		.mode		= 0644,
-		.proc_handler	= sched_ignore_cluster_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX,
+		.proc_handler	= sched_freq_map_handler,
 	},
 	{
-		.procname	= "cluster2_rel",
+		.procname	= "sched_cluster2_freq_map",
 		.data		= sysctl_cluster_arr[2],
-		.maxlen		= sizeof(int) * 15,
+		.maxlen		= sizeof(int) * MAX_FREQ_RELATIONS * TUPLE_SIZE,
 		.mode		= 0644,
-		.proc_handler	= sched_ignore_cluster_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_INT_MAX,
+		.proc_handler	= sched_freq_map_handler,
+	},
+	{
+		.procname	= "sched_cluster3_freq_map",
+		.data		= sysctl_cluster_arr[3],
+		.maxlen		= sizeof(int) * MAX_FREQ_RELATIONS * TUPLE_SIZE,
+		.mode		= 0644,
+		.proc_handler	= sched_freq_map_handler,
 	},
 	{ }
 };
@@ -921,18 +1510,18 @@ struct ctl_table walt_base_table[] = {
 
 void walt_tunables(void)
 {
-	int i;
+	int i, j;
 
 	for (i = 0; i < MAX_MARGIN_LEVELS; i++) {
 		sysctl_sched_capacity_margin_up_pct[i] = 95; /* ~5% margin */
 		sysctl_sched_capacity_margin_dn_pct[i] = 85; /* ~15% margin */
+		sysctl_sched_early_up[i] = 1077;
+		sysctl_sched_early_down[i] = 1204;
 	}
 
 	sysctl_sched_group_upmigrate_pct = 100;
 
 	sysctl_sched_group_downmigrate_pct = 95;
-
-	sysctl_sched_asym_cap_sibling_freq_match_pct = 100;
 
 	sysctl_sched_task_unfilter_period = 100000000;
 
@@ -961,4 +1550,24 @@ void walt_tunables(void)
 
 	for (i = 0; i < 8; i++)
 		sysctl_input_boost_freq[i] = 0;
+
+	for (i = 0; i < MAX_CLUSTERS; i++) {
+		sysctl_fmax_cap[i] = FREQ_QOS_MAX_DEFAULT_VALUE;
+		high_perf_cluster_freq_cap[i] = FREQ_QOS_MAX_DEFAULT_VALUE;
+		sysctl_sched_idle_enough_clust[i] = SCHED_IDLE_ENOUGH_DEFAULT;
+		sysctl_sched_cluster_util_thres_pct_clust[i] = SCHED_CLUSTER_UTIL_THRES_PCT_DEFAULT;
+	}
+
+	for (i = 0; i < MAX_FREQ_CAP; i++) {
+		for (j = 0; j < MAX_CLUSTERS; j++)
+			fmax_cap[i][j] = FREQ_QOS_MAX_DEFAULT_VALUE;
+	}
+
+	for (i = 0; i < MAX_CLUSTERS; i++) {
+		for (j = 0; j < MAX_FREQ_RELATIONS; j++) {
+			relation_data[i][j].src_freq = relation_data[i][j].tgt_freq =
+									FREQ_QOS_MAX_DEFAULT_VALUE;
+			relation_data[i][j].target_cluster_cpu = -1;
+		}
+	}
 }

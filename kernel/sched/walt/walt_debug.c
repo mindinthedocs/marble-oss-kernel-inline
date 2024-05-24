@@ -11,7 +11,7 @@
 #include "walt.h"
 #include "walt_debug.h"
 
-static void android_rvh_schedule_bug(void *unused, struct task_struct *unused2)
+static void android_rvh_schedule_bug(void *unused, void *unused2)
 {
 	BUG();
 }
