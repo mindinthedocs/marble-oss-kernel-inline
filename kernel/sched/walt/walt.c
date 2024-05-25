@@ -17,6 +17,7 @@
 #include <linux/cpu.h>
 
 #include <trace/hooks/sched.h>
+#include <trace/hooks/topology.h>
 #include <trace/hooks/cpufreq.h>
 #include <trace/events/power.h>
 #include <trace/hooks/cgroup.h>
@@ -2793,13 +2794,13 @@ static void walt_get_possible_siblings(int cpuid, struct cpumask *cluster_cpus)
 	int cpu;
 	struct cpu_topology *cpu_topo, *cpuid_topo = &cpu_topology[cpuid];
 
-	if (cpuid_topo->cluster_id == -1)
+	if (cpuid_topo->package_id == -1)
 		return;
 
 	for_each_possible_cpu(cpu) {
 		cpu_topo = &cpu_topology[cpu];
 
-		if (cpuid_topo->cluster_id != cpu_topo->cluster_id)
+		if (cpuid_topo->package_id != cpu_topo->package_id)
 			continue;
 		cpumask_set_cpu(cpu, cluster_cpus);
 	}
@@ -5251,6 +5252,8 @@ static void android_rvh_sched_exec(void *unused, bool *cond)
 
 static void android_rvh_build_perf_domains(void *unused, bool *eas_check)
 {
+	if (unlikely(walt_disabled))
+		return;
 	*eas_check = true;
 }
 
@@ -5280,9 +5283,10 @@ static void rebuild_sd_workfn(struct work_struct *work)
 
 	for_each_possible_cpu(cpu) {
 		cpu_dev = get_cpu_device(cpu);
-		if (cpu_dev->em_pd)
+		if (cpu_dev->em_pd){
+		    printk("WALT: em_pd exists for cpu %d",cpu);
 			continue;
-
+        }
 		WARN_ONCE(true, "must wait for perf domains to be created");
 		schedule_work(&rebuild_sd_work);
 
@@ -5290,6 +5294,7 @@ static void rebuild_sd_workfn(struct work_struct *work)
 		return;
 	}
 
+    printk("WALT: rebuilding sched domains");
 	rebuild_sched_domains();
 	complete(&rebuild_domains_completion);
 }
@@ -5413,12 +5418,12 @@ static void register_walt_hooks(void)
 	register_trace_android_rvh_cpu_cgroup_attach(android_rvh_cpu_cgroup_attach, NULL);
 	register_trace_android_rvh_cpu_cgroup_online(android_rvh_cpu_cgroup_online, NULL);
 	register_trace_android_rvh_sched_fork_init(android_rvh_sched_fork_init, NULL);
-	//register_trace_android_rvh_ttwu_cond(android_rvh_ttwu_cond, NULL);
+	register_trace_android_rvh_ttwu_cond(android_rvh_ttwu_cond, NULL);
 	register_trace_android_rvh_sched_exec(android_rvh_sched_exec, NULL);
 	register_trace_android_rvh_build_perf_domains(android_rvh_build_perf_domains, NULL);
 	register_trace_cpu_frequency_limits(walt_cpu_frequency_limits, NULL);
 	register_trace_android_rvh_do_sched_yield(walt_do_sched_yield, NULL);
-	register_trace_android_rvh_update_thermal_stats(android_rvh_update_thermal_stats, NULL);
+	//register_trace_android_rvh_update_thermal_stats(android_rvh_update_thermal_stats, NULL);
 	register_trace_android_rvh_cgroup_force_kthread_migration(
 					walt_cgroup_force_kthread_migration, NULL);
 }
@@ -5521,10 +5526,11 @@ static void walt_init(struct work_struct *work)
 		 * create_util_to_cost depends on rd->pd being properly
 		 * initialized.
 		 */
+		printk("WALT: perf domains not properly configured. rebuilding pd");
 		schedule_work(&rebuild_sd_work);
 		wait_for_completion_interruptible(&rebuild_domains_completion);
 	}
-
+    printk("WALT: domains rebuilt");
 	stop_machine(walt_init_stop_handler, NULL, NULL);
 
 	/*
@@ -5541,13 +5547,17 @@ static void walt_init(struct work_struct *work)
 
 	hdr = register_sysctl_table(walt_base_table);
 	kmemleak_not_leak(hdr);
-
+    printk("WALT: sysctl registered");
 	input_boost_init();
+	printk("WALT: input_boost init okay");
 	core_ctl_init();
+	printk("WALT: core_ctl init okay");
 	walt_boost_init();
+	printk("WALT: boost init okay");
 	waltgov_register();
+    printk("WALT: waltgov register okay");
 
-	i = match_string(sched_feat_names, __SCHED_FEAT_NR, "TTWU_QUEUE");
+	i = 0;
 	if (i >= 0) {
 		static_key_disable(&sched_feat_keys[i]);
 		sysctl_sched_features &= ~(1UL << i);

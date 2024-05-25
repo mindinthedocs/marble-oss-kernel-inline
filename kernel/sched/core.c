@@ -2071,9 +2071,8 @@ static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 	}
 
 	uclamp_rq_inc(rq, p);
-	p->sched_class->enqueue_task(rq, p, flags);
-
 	trace_android_rvh_enqueue_task(rq, p, flags);
+	p->sched_class->enqueue_task(rq, p, flags);
 	trace_android_rvh_after_enqueue_task(rq, p, flags);
 
 	if (sched_core_enabled(rq))
@@ -2094,6 +2093,7 @@ static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 	}
 
 	uclamp_rq_dec(rq, p);
+	trace_android_rvh_dequeue_task(rq, p, flags);
 	p->sched_class->dequeue_task(rq, p, flags);
 	trace_android_rvh_after_dequeue_task(rq, p, flags);
 }
@@ -3166,7 +3166,7 @@ static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
 	 * immediately required to distribute the tasks within their new mask.
 	 */
 	dest_cpu = cpumask_any_and_distribute(cpu_valid_mask, ctx->new_mask);
-	trace_android_rvh_set_cpus_allowed_by_task(cpu_valid_mask, new_mask, p, &dest_cpu);
+	trace_android_rvh_set_cpus_allowed_by_task(cpu_valid_mask, ctx->new_mask, p, &dest_cpu);
 	if (dest_cpu >= nr_cpu_ids) {
 		ret = -EINVAL;
 		goto out;
@@ -3393,7 +3393,6 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 	__set_task_cpu(p, new_cpu);
 }
 
-#ifdef CONFIG_NUMA_BALANCING
 static void __migrate_swap_task(struct task_struct *p, int cpu)
 {
 	if (task_on_rq_queued(p)) {
@@ -3508,7 +3507,7 @@ int migrate_swap(struct task_struct *cur, struct task_struct *p,
 out:
 	return ret;
 }
-#endif /* CONFIG_NUMA_BALANCING */
+EXPORT_SYMBOL_GPL(migrate_swap);
 
 /***
  * kick_process - kick a running thread to enter/exit the kernel
@@ -8358,7 +8357,8 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 	struct affinity_context ac;
 	struct cpumask *user_mask;
 	struct task_struct *p;
-	int retval;
+	int retval = 0;
+	bool skip = false;
 
 	rcu_read_lock();
 
@@ -8410,6 +8410,7 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 	};
 
 	retval = __sched_setaffinity(p, &ac);
+	trace_android_rvh_sched_setaffinity(p, in_mask, &retval);
 	kfree(ac.user_mask);
 
 out_put_task:
@@ -10597,6 +10598,7 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 	mutex_unlock(&uclamp_mutex);
 #endif
 
+	trace_android_rvh_cpu_cgroup_online(css);
 	return 0;
 }
 
@@ -10638,6 +10640,8 @@ static void cpu_cgroup_attach(struct cgroup_taskset *tset)
 
 	cgroup_taskset_for_each(task, css, tset)
 		sched_move_task(task);
+
+	trace_android_rvh_cpu_cgroup_attach(tset);
 }
 
 #ifdef CONFIG_UCLAMP_TASK_GROUP

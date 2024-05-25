@@ -34,6 +34,7 @@
 #include "ufs_quirks.h"
 #include "ufshcd-crypto-qti.h"
 #include <trace/hooks/ufshcd.h>
+#include <linux/thread_info.h>
 
 #define UFS_QCOM_DEFAULT_DBG_PRINT_EN	\
 	(UFS_QCOM_DBG_PRINT_REGS_EN | UFS_QCOM_DBG_PRINT_TEST_BUS_EN)
@@ -59,7 +60,7 @@
 	do {	\
 		if (host->ufs_ipc_log_ctx && host->dbg_en)	\
 			ipc_log_string(host->ufs_ipc_log_ctx,	\
-					",%d,"fmt, current->cpu, ##__VA_ARGS__);\
+					",%d,"fmt, current_thread_info()->cpu, ##__VA_ARGS__);\
 	} while (0)
 
 #define UFS_BOOT_DEVICE  0x1

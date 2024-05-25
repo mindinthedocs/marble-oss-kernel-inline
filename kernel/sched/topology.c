@@ -4,6 +4,8 @@
  */
 #include "sched.h"
 
+#include <trace/hooks/sched.h>
+
 DEFINE_MUTEX(sched_domains_mutex);
 
 /* Protected by sched_domains_mutex: */
@@ -422,6 +424,7 @@ static void sched_energy_set(bool has_eas)
  *    4. schedutil is driving the frequency of all CPUs of the rd;
  *    5. frequency invariance support is present;
  */
+
 static bool build_perf_domains(const struct cpumask *cpu_map)
 {
 	int i;

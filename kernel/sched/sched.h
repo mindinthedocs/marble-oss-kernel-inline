@@ -431,8 +431,6 @@ struct task_group {
 	struct uclamp_se	uclamp[UCLAMP_CNT];
 
 	ANDROID_VENDOR_DATA_ARRAY(1, 4);
-
-	ANDROID_VENDOR_DATA_ARRAY(1, 4);
 #endif
 
 };
@@ -914,7 +912,12 @@ struct root_domain {
 	 */
 	struct perf_domain __rcu *pd;
 
-	ANDROID_VENDOR_DATA_ARRAY(1, 4);
+	ANDROID_VENDOR_DATA_ARRAY(1, 1);
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 extern void init_defrootdomain(void);

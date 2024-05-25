@@ -179,7 +179,7 @@ static void update_topology_flags_workfn(struct work_struct *work)
 	rebuild_sched_domains();
 	topology_update_done = true;
 	trace_android_vh_update_topology_flags_workfn(NULL);
-	pr_debug("sched_domain hierarchy rebuilt, flags updated\n");
+	printk("sched_domain hierarchy rebuilt, flags updated\n");
 	update_topology = 0;
 }
 
