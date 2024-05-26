@@ -731,26 +731,41 @@ static ssize_t show_scaling_cur_freq(struct cpufreq_policy *policy, char *buf)
 	return ret;
 }
 
-/*
- * cpufreq_per_cpu_attr_write() / store_##file_name() - sysfs write access
- */
-#define store_one(file_name, object)			\
-static ssize_t store_##file_name					\
-(struct cpufreq_policy *policy, const char *buf, size_t count)		\
-{									\
-	unsigned long val;						\
-	int ret;							\
-									\
-	ret = sscanf(buf, "%lu", &val);					\
-	if (ret != 1)							\
-		return -EINVAL;						\
-									\
-	ret = freq_qos_update_request(policy->object##_freq_req, val);\
-	return ret >= 0 ? count : ret;					\
+static ssize_t store_scaling_min_freq(struct cpufreq_policy *policy, const char *buf, size_t count) {
+  unsigned long val;
+  int ret;
+
+  ret = sscanf(buf, "%lu", &val);
+  if (ret != 1)
+    return -EINVAL;
+
+  ret = freq_qos_update_request(policy->min_freq_req, val);
+  return ret >= 0 ? count : ret;
 }
 
-store_one(scaling_min_freq, min);
-store_one(scaling_max_freq, max);
+static ssize_t store_scaling_max_freq(struct cpufreq_policy *policy, const char *buf, size_t count) {
+  unsigned long val;
+  int ret;
+
+  ret = sscanf(buf, "%lu", &val);
+  if (ret != 1)
+    return -EINVAL;
+
+  ret = freq_qos_update_request(policy->max_freq_req, val);
+
+  unsigned long max_capacity, min_capacity, capacity;
+  int cpu;
+  cpu = cpumask_first(policy->related_cpus);
+  max_capacity = arch_scale_cpu_capacity(cpu);
+  min_capacity = (policy->cpuinfo.min_freq * max_capacity) / (policy->cpuinfo.max_freq);
+  capacity     = (val * max_capacity) / (policy->cpuinfo.max_freq);
+  arch_set_thermal_pressure(policy->related_cpus, max_capacity - capacity);
+
+  if (ret >= 0){
+    return count;
+  }
+  return ret;
+}
 
 /*
  * show_cpuinfo_cur_freq - current CPU frequency as detected by hardware
