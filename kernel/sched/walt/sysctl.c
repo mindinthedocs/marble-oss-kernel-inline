@@ -73,7 +73,7 @@ unsigned int sysctl_sched_suppress_region2;
 unsigned int sysctl_sched_skip_sp_newly_idle_lb = 1;
 unsigned int sysctl_sched_hyst_min_coloc_ns = 80000000;
 unsigned int sysctl_sched_asymcap_boost;
-unsigned int sysctl_sched_long_running_rt_task_ms;
+unsigned int sysctl_sched_long_running_rt_task_ms = 1000;
 unsigned int sysctl_sched_idle_enough = SCHED_IDLE_ENOUGH_DEFAULT;
 unsigned int sysctl_sched_cluster_util_thres_pct = SCHED_CLUSTER_UTIL_THRES_PCT_DEFAULT;
 unsigned int sysctl_sched_idle_enough_clust[MAX_CLUSTERS];
@@ -88,7 +88,7 @@ unsigned int sysctl_sched_sbt_pause_cpus;
 unsigned int sysctl_sched_sbt_enable = 1;
 unsigned int sysctl_sched_sbt_delay_windows;
 unsigned int high_perf_cluster_freq_cap[MAX_CLUSTERS];
-unsigned int sysctl_sched_pipeline_cpus;
+unsigned int sysctl_sched_pipeline_cpus = 112;
 unsigned int fmax_cap[MAX_FREQ_CAP][MAX_CLUSTERS];
 /* Entries for 4 clusters and 10 tuples(3 item in each tuple */
 unsigned int sysctl_cluster_arr[4][MAX_FREQ_RELATIONS * TUPLE_SIZE] = {
