@@ -561,7 +561,7 @@ static int walt_lb_find_busiest_from_higher_cap_cpu(int dst_cpu, const cpumask_t
 	 * capacity cluster is sufficiently loaded.
 	 */
 	if (!walt_rotation_enabled && !asymcap_boost) {
-		if (total_nr <= total_cpus || total_util * 1280 < total_capacity * 1024)
+		if (total_nr <= total_cpus || total_util * 1024 < total_capacity * 1024)
 			busiest_cpu = -1;
 	}
 
@@ -627,7 +627,7 @@ static int walt_lb_find_busiest_from_lower_cap_cpu(int dst_cpu, const cpumask_t 
 
 	if (!walt_rotation_enabled && !busy_nr_big_tasks &&
 		!(busiest_cpu != -1 && ASYMCAP_BOOST(busiest_cpu))) {
-		if (total_nr <= total_cpus || total_util * 1280 < total_capacity * 1024)
+		if (total_nr <= total_cpus || total_util * 1024 < total_capacity * 1024)
 			busiest_cpu = -1;
 	}
 
