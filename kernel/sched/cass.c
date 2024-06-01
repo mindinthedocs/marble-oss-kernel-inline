@@ -47,7 +47,7 @@ void cass_cpu_util(struct cass_cpu_cand *c, int this_cpu, bool sync)
 	/* Get this CPU's utilization from CFS tasks */
 	c->util = READ_ONCE(cfs_rq->avg.util_avg);
 	if (sched_feat(UTIL_EST)) {
-		est = READ_ONCE(cfs_rq->avg.util_est.enqueued);
+		est = READ_ONCE(cfs_rq->avg.util_est);
 		if (est > c->util) {
 			/* Don't deduct @current's util from estimated util */
 			sync = false;
@@ -132,7 +132,7 @@ done:
 	return res > 0;
 }
 
-static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt)
+int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt)
 {
 	/* Initialize @best such that @best always has a valid CPU at the end */
 	struct cass_cpu_cand cands[2], *best = cands;
@@ -264,6 +264,8 @@ static int cass_best_cpu(struct task_struct *p, int prev_cpu, bool sync, bool rt
 
 	return best->cpu;
 }
+
+EXPORT_SYMBOL_GPL(cass_best_cpu);
 
 static int cass_select_task_rq(struct task_struct *p, int prev_cpu,
 			       int wake_flags, bool rt)
