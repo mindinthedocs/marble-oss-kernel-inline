@@ -529,7 +529,7 @@ static int walt_lb_find_busiest_from_higher_cap_cpu(int dst_cpu, const cpumask_t
 		util = walt_lb_cpu_util(i);
 		total_cpus += 1;
 		total_util += util;
-		total_capacity += arch_scale_cpu_capacity(i);
+		total_capacity += capacity_orig_of(i);
 		total_nr += cpu_rq(i)->cfs.h_nr_running;
 
 		if (cpu_rq(i)->cfs.h_nr_running < 2)
@@ -598,7 +598,7 @@ static int walt_lb_find_busiest_from_lower_cap_cpu(int dst_cpu, const cpumask_t 
 		util = walt_lb_cpu_util(i);
 		total_cpus += 1;
 		total_util += util;
-		total_capacity += arch_scale_cpu_capacity(i);
+		total_capacity += capacity_orig_of(i);
 		total_nr += cpu_rq(i)->cfs.h_nr_running;
 
 		/*
@@ -820,7 +820,7 @@ static bool should_help_min_cap(int this_cpu)
 }
 
 /* similar to sysctl_sched_migration_cost */
-#define NEWIDLE_BALANCE_THRESHOLD	500000
+#define NEWIDLE_BALANCE_THRESHOLD	0
 static void walt_newidle_balance(struct rq *this_rq,
 				 struct rq_flags *rf, int *pulled_task,
 				 int *done, int force_overload)
@@ -912,8 +912,8 @@ static void walt_newidle_balance(struct rq *this_rq,
 		 *   Same capacity cpus should help each other
 		 */
 		if (!enough_idle &&
-			(arch_scale_cpu_capacity(this_cpu) < arch_scale_cpu_capacity(busy_cpu) ||
-			(arch_scale_cpu_capacity(this_cpu) > arch_scale_cpu_capacity(busy_cpu) && !has_misfit)))
+			(capacity_orig_of(this_cpu) < capacity_orig_of(busy_cpu) ||
+			(capacity_orig_of(this_cpu) > capacity_orig_of(busy_cpu) && !has_misfit)))
 			continue;
 
 		/* if helping farthest cluster,  kick a middle */
@@ -925,8 +925,8 @@ static void walt_newidle_balance(struct rq *this_rq,
 				walt_kick_cpu(first_idle);
 			} else {
 				if (walt_rotation_enabled &&
-					arch_scale_cpu_capacity(this_cpu) >
-					arch_scale_cpu_capacity(busy_cpu)) {
+					capacity_orig_of(this_cpu) >
+					capacity_orig_of(busy_cpu)) {
 					/*
 					 * When BTR active help
 					 * smallest immediately

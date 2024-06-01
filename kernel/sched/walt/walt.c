@@ -653,7 +653,7 @@ __cpu_util_freq_walt(int cpu, struct walt_cpu_load *walt_load, unsigned int *rea
 {
 	u64 util;
 	struct rq *rq = cpu_rq(cpu);
-	unsigned long capacity = arch_scale_cpu_capacity(cpu);
+	unsigned long capacity = capacity_orig_of(cpu);
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu_of(rq));
 
 	util = scale_time_to_util(freq_policy_load(rq, reason));
@@ -696,7 +696,7 @@ cpu_util_freq_walt(int cpu, struct walt_cpu_load *walt_load, unsigned int *reaso
 	struct walt_cpu_load wl_other = {0};
 	struct walt_cpu_load wl_prime = {0};
 	unsigned long util = 0, util_other = 0, util_prime = 0;
-	unsigned long capacity = arch_scale_cpu_capacity(cpu);
+	unsigned long capacity = capacity_orig_of(cpu);
 	int i, mpct = PRIME_FACTOR;
 	unsigned long max_nl_other = 0, max_pl_other = 0;
 
@@ -1626,7 +1626,7 @@ static bool do_pl_notif(struct rq *rq)
 	int cpu = cpu_of(rq);
 
 	/* If already at max freq, bail out */
-	if (arch_scale_cpu_capacity(cpu) == capacity_curr_of(cpu))
+	if (capacity_orig_of(cpu) == capacity_curr_of(cpu))
 		return false;
 
 	prev = max(prev, wrq->old_estimated_time);
@@ -4420,7 +4420,7 @@ void update_cpu_capacity_helper(int cpu)
 {
 	unsigned long fmax_capacity = arch_scale_cpu_capacity(cpu);
 	unsigned long thermal_pressure = arch_scale_thermal_pressure(cpu);
-	unsigned long thermal_cap, old, new_capacity;
+	unsigned long thermal_cap, old;
 	struct walt_sched_cluster *cluster;
 	struct rq *rq = cpu_rq(cpu);
 
@@ -4434,6 +4434,7 @@ void update_cpu_capacity_helper(int cpu)
 	 */
 
 	thermal_cap = fmax_capacity - thermal_pressure;
+	//printk("WALT: Thermal pressure is %u",thermal_pressure);
 
 	cluster = cpu_cluster(cpu);
 	/* reduce the fmax_capacity under cpufreq constraints */
@@ -4441,23 +4442,23 @@ void update_cpu_capacity_helper(int cpu)
 		fmax_capacity = mult_frac(fmax_capacity, cluster->walt_internal_freq_limit,
 					 cluster->max_possible_freq);
 
-	old = arch_scale_cpu_capacity(cpu_of(rq));
-	new_capacity = min(fmax_capacity, thermal_cap);
+	old = rq->cpu_capacity_orig;
+	rq->cpu_capacity_orig = min(fmax_capacity, thermal_cap);
 
-	if (old != new_capacity)
-		trace_update_cpu_capacity(cpu, fmax_capacity, new_capacity);
+	if (old != rq->cpu_capacity_orig)
+		trace_update_cpu_capacity(cpu, fmax_capacity, rq->cpu_capacity_orig);
 }
 
 /*
  * The intention of this hook is to update cpu_capacity_orig as well as
- * (*capacity), otherwise we will end up capacity_of() > arch_scale_cpu_capacity().
+ * (*capacity), otherwise we will end up capacity_of() > capacity_orig_of().
  */
 static void android_rvh_update_cpu_capacity(void *unused, int cpu, unsigned long *capacity)
 {
 	unsigned long rt_pressure = arch_scale_cpu_capacity(cpu) - *capacity;
-
+    //printk("WALT hook update cpu capacity");
 	update_cpu_capacity_helper(cpu);
-	*capacity = max((int)(arch_scale_cpu_capacity(cpu) - rt_pressure), 0);
+	*capacity = max((int)(cpu_rq(cpu)->cpu_capacity_orig - rt_pressure), 0);
 }
 
 DEFINE_PER_CPU(u32, wakeup_ctr);
@@ -5283,10 +5284,9 @@ static void rebuild_sd_workfn(struct work_struct *work)
 
 	for_each_possible_cpu(cpu) {
 		cpu_dev = get_cpu_device(cpu);
-		if (cpu_dev->em_pd){
-		    printk("WALT: em_pd exists for cpu %d",cpu);
+		if (cpu_dev->em_pd)
 			continue;
-        }
+
 		WARN_ONCE(true, "must wait for perf domains to be created");
 		schedule_work(&rebuild_sd_work);
 
@@ -5294,7 +5294,6 @@ static void rebuild_sd_workfn(struct work_struct *work)
 		return;
 	}
 
-    printk("WALT: rebuilding sched domains");
 	rebuild_sched_domains();
 	complete(&rebuild_domains_completion);
 }
@@ -5423,7 +5422,7 @@ static void register_walt_hooks(void)
 	register_trace_android_rvh_build_perf_domains(android_rvh_build_perf_domains, NULL);
 	register_trace_cpu_frequency_limits(walt_cpu_frequency_limits, NULL);
 	register_trace_android_rvh_do_sched_yield(walt_do_sched_yield, NULL);
-	//register_trace_android_rvh_update_thermal_stats(android_rvh_update_thermal_stats, NULL);
+	register_trace_android_rvh_update_thermal_stats(android_rvh_update_thermal_stats, NULL);
 	register_trace_android_rvh_cgroup_force_kthread_migration(
 					walt_cgroup_force_kthread_migration, NULL);
 }
@@ -5526,11 +5525,10 @@ static void walt_init(struct work_struct *work)
 		 * create_util_to_cost depends on rd->pd being properly
 		 * initialized.
 		 */
-		printk("WALT: perf domains not properly configured. rebuilding pd");
 		schedule_work(&rebuild_sd_work);
 		wait_for_completion_interruptible(&rebuild_domains_completion);
 	}
-    printk("WALT: domains rebuilt");
+
 	stop_machine(walt_init_stop_handler, NULL, NULL);
 
 	/*
@@ -5547,15 +5545,11 @@ static void walt_init(struct work_struct *work)
 
 	hdr = register_sysctl_table(walt_base_table);
 	kmemleak_not_leak(hdr);
-    printk("WALT: sysctl registered");
+
 	input_boost_init();
-	printk("WALT: input_boost init okay");
 	core_ctl_init();
-	printk("WALT: core_ctl init okay");
 	walt_boost_init();
-	printk("WALT: boost init okay");
 	waltgov_register();
-    printk("WALT: waltgov register okay");
 
 	i = 0;
 	if (i >= 0) {
