@@ -70,7 +70,7 @@
 #include <linux/task_work.h>
 #include <linux/tsacct_kern.h>
 #include <linux/android_vendor.h>
-
+#include <linux/android_kabi.h>
 #include <asm/tlb.h>
 
 #ifdef CONFIG_PARAVIRT
@@ -433,6 +433,10 @@ struct task_group {
 	ANDROID_VENDOR_DATA_ARRAY(1, 4);
 #endif
 
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
+	ANDROID_KABI_RESERVE(3);
+	ANDROID_KABI_RESERVE(4);
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -1162,8 +1166,6 @@ struct rq {
 	struct cpuidle_state	*idle_state;
 #endif
 
-	ANDROID_VENDOR_DATA_ARRAY(1, 96);
-
 #ifdef CONFIG_SMP
 	unsigned int		nr_pinned;
 #endif
@@ -1187,6 +1189,14 @@ struct rq {
 	unsigned int		core_forceidle_occupation;
 	u64			core_forceidle_start;
 #endif
+
+    ANDROID_VENDOR_DATA_ARRAY(1, 1);
+    ANDROID_OEM_DATA_ARRAY(1, 16);
+
+    ANDROID_KABI_RESERVE(1);
+    ANDROID_KABI_RESERVE(2);
+    ANDROID_KABI_RESERVE(3);
+    ANDROID_KABI_RESERVE(4);
 
 	/* Scratch cpumask to be temporarily used under rq_lock */
 	cpumask_var_t		scratch_mask;

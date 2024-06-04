@@ -24,6 +24,28 @@
 #include "walt.h"
 #include "trace.h"
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING)
+#include <linux/cpufreq_bouncing.h>
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_OCH)
+#include <linux/cpufreq_health.h>
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+#include <../kernel/oplus_cpu/sched/frame_boost/frame_group.h>
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_ABNORMAL_FLAG)
+#include <linux/task_overload.h>
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+#include <../kernel/oplus_cpu/sched/eas_opt/oplus_cap.h>
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+#include <../kernel/oplus_cpu/sched/eas_opt/oplus_iowait.h>
+#endif
+
 const char *task_event_names[] = {
 	"PUT_PREV_TASK",
 	"PICK_NEXT_TASK",
@@ -53,6 +75,8 @@ DEFINE_SPINLOCK(cpus_taken_lock);
 DEFINE_PER_CPU(int, cpus_taken_refcount);
 
 DEFINE_PER_CPU(struct walt_rq, walt_rq);
+EXPORT_PER_CPU_SYMBOL_GPL(walt_rq);
+
 unsigned int sysctl_sched_user_hint;
 static u64 sched_clock_last;
 static bool walt_clock_suspended;
@@ -67,8 +91,11 @@ cpumask_t asym_cap_sibling_cpus = CPU_MASK_NONE;
 cpumask_t shared_rail_sibling_cpus = CPU_MASK_NONE;
 
 unsigned int __read_mostly sched_ravg_window = 20000000;
+EXPORT_SYMBOL(sched_ravg_window);
+
 int min_possible_cluster_id;
 int max_possible_cluster_id;
+unsigned int fmax_es_cap[MAX_CLUSTERS] = {FREQ_QOS_MAX_DEFAULT_VALUE, 2956800, FREQ_QOS_MAX_DEFAULT_VALUE, 3187200};
 /* Initial task load. Newly created tasks are assigned this load. */
 unsigned int __read_mostly sched_init_task_load_windows;
 /*
@@ -89,6 +116,7 @@ u64 walt_sched_clock(void)
 		return sched_clock_last;
 	return sched_clock();
 }
+EXPORT_SYMBOL(walt_sched_clock);
 
 static void walt_resume(void)
 {
@@ -591,13 +619,23 @@ should_apply_suh_freq_boost(struct walt_sched_cluster *cluster)
 	return is_cluster_hosting_top_app(cluster);
 }
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_OCH)
+static inline u64 freq_policy_load(struct rq *rq, unsigned int *reason, int *edtask_flag)
+#else
 static inline u64 freq_policy_load(struct rq *rq, unsigned int *reason)
+#endif
 {
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu_of(rq));
 	struct walt_sched_cluster *cluster = wrq->cluster;
 	u64 aggr_grp_load = cluster->aggr_grp_load;
 	u64 load, tt_load = 0, kload = 0;
 	struct task_struct *cpu_ksoftirqd = per_cpu(ksoftirqd, cpu_of(rq));
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_OCH)
+	if (wrq->ed_task != NULL) {
+		*edtask_flag = 1;
+	}
+#endif
 
 	if (sched_freq_aggr_en) {
 		load = wrq->prev_runnable_sum + aggr_grp_load;
@@ -656,7 +694,14 @@ __cpu_util_freq_walt(int cpu, struct walt_cpu_load *walt_load, unsigned int *rea
 	unsigned long capacity = capacity_orig_of(cpu);
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu_of(rq));
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_OCH)
+	int edtask_flag = 0;
+	util = div64_u64(freq_policy_load(rq, reason, &edtask_flag),
+			sched_ravg_window >> SCHED_CAPACITY_SHIFT);
+	cpufreq_health_get_edtask_state(cpu, edtask_flag);
+#else
 	util = scale_time_to_util(freq_policy_load(rq, reason));
+#endif
 
 	/*
 	 * util is on a scale of 0 to 1024.  this is the utilization
@@ -743,6 +788,7 @@ cpu_util_freq_walt(int cpu, struct walt_cpu_load *walt_load, unsigned int *reaso
 finish:
 	return (util >= capacity) ? capacity : util;
 }
+EXPORT_SYMBOL(cpu_util_freq_walt);
 
 /*
  * In this function we match the accumulated subtractions with the current
@@ -1618,7 +1664,11 @@ static inline unsigned int load_to_freq(struct rq *rq, unsigned int load)
 		 (unsigned int)arch_scale_cpu_capacity(cpu_of(rq)));
 }
 
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+static bool do_pl_notif(struct rq *rq, bool in_iowait)
+#else
 static bool do_pl_notif(struct rq *rq)
+#endif
 {
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu_of(rq));
 	u64 prev = wrq->old_busy_time;
@@ -1629,6 +1679,10 @@ static bool do_pl_notif(struct rq *rq)
 	if (capacity_orig_of(cpu) == capacity_curr_of(cpu))
 		return false;
 
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	if (in_iowait)
+		return true;
+#endif
 	prev = max(prev, wrq->old_estimated_time);
 
 	/* 400 MHz filter. */
@@ -2384,8 +2438,15 @@ static void walt_update_task_ravg(struct task_struct *p, struct rq *rq, int even
 	update_task_demand(p, rq, event, wallclock);
 	update_cpu_busy_time(p, rq, event, wallclock, irqtime);
 	update_task_pred_demand(rq, p, event);
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	if (sysctl_oplus_iowait_skip_min_enabled) {
+		if (event == PUT_PREV_TASK && READ_ONCE(p->__state))
+			wts->iowaited = p->in_iowait;
+	}
+#else
 	if (event == PUT_PREV_TASK && READ_ONCE(p->__state))
 		wts->iowaited = p->in_iowait;
+#endif
 
 	trace_sched_update_task_ravg(p, rq, event, wallclock, irqtime,
 				&wrq->grp_time, wrq, wts, atomic64_read(&walt_irq_work_lastq_ws));
@@ -2708,6 +2769,9 @@ static void update_all_clusters_stats(void)
 			min_possible_cluster_id = cluster_id;
 		}
 	}
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_ABNORMAL_FLAG)
+	walt_update_cluster_id(min_possible_cluster_id, max_possible_cluster_id);
+#endif /* #OPLUS_FEATURE_ABNORMAL_FLAG */
 	walt_update_group_thresholds();
 }
 
@@ -4423,6 +4487,9 @@ void update_cpu_capacity_helper(int cpu)
 	unsigned long thermal_cap, old;
 	struct walt_sched_cluster *cluster;
 	struct rq *rq = cpu_rq(cpu);
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+    int cluster_id;
+#endif
 
 	if (unlikely(walt_disabled))
 		return;
@@ -4443,10 +4510,23 @@ void update_cpu_capacity_helper(int cpu)
 					 cluster->max_possible_freq);
 
 	old = rq->cpu_capacity_orig;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+	cluster_id = topology_cluster_id(cpu);
+	if (eas_opt_enable && cluster_id >= 0 && cluster_id < OPLUS_CLUSTERS)
+		rq->cpu_capacity_orig = mult_frac(min(fmax_capacity, thermal_cap), oplus_cap_multiple[cluster_id], 100);
+	else
+		rq->cpu_capacity_orig = min(fmax_capacity, thermal_cap);
+	real_cpu_cap[cpu] = min(fmax_capacity, thermal_cap);
+#else
 	rq->cpu_capacity_orig = min(fmax_capacity, thermal_cap);
+#endif
 
-	if (old != rq->cpu_capacity_orig)
+	if (old != rq->cpu_capacity_orig) {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+		oplus_cap_systrace_c(cpu, rq->cpu_capacity_orig, real_cpu_cap[cpu]);
+#endif
 		trace_update_cpu_capacity(cpu, fmax_capacity, rq->cpu_capacity_orig);
+	}
 }
 
 /*
@@ -4479,6 +4559,17 @@ static void walt_irq_work(struct irq_work *irq_work)
 	bool is_migration = false, is_asym_migration = false, is_shared_rail_migration = false;
 	u32 wakeup_ctr_sum = 0;
 	bool found_topapp = false;
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING)
+	struct walt_sched_cluster *cluster;
+	for_each_sched_cluster(cluster) {
+		int cpu = cpumask_first(&cluster->cpus);
+		struct cpufreq_policy *pol = cpufreq_cpu_get_raw(cpu);
+
+		if (pol)
+			cb_update(pol, walt_sched_clock());
+	}
+#endif
 
 	if (irq_work == &walt_migration_irq_work)
 		is_migration = true;
@@ -4613,25 +4704,28 @@ void fmax_uncap_checkpoint(int nr_big, u64 window_start, u32 wakeup_ctr_sum)
 	fmax_uncap_load_detected = (nr_big >= 7 && wakeup_ctr_sum < WAKEUP_CTR_THRESH) ||
 			is_full_throttle_boost() ||
 			is_storage_boost() ||
+			is_conservative_boost() ||
 			thres_based_uncap(window_start);
 
 	if (fmax_uncap_load_detected) {
-		if (!fmax_uncap_timestamp)
+		if (!fmax_uncap_timestamp) {
 			for (i = 0; i < num_sched_clusters; i++)
 				fmax_cap[SMART_FMAX_CAP][i] = FREQ_QOS_MAX_DEFAULT_VALUE;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_ABNORMAL_FLAG)
+			if (!(is_full_throttle_boost() || is_conservative_boost() || !sysctl_abnormal_enable)) {
+#else
+			if (!(is_full_throttle_boost() || is_conservative_boost())) {
+#endif
+				for (i = 0; i < num_sched_clusters; i++)
+					fmax_cap[SMART_FMAX_CAP][i] = fmax_es_cap[i];
+			}
 		fmax_uncap_timestamp = window_start;
-	} else if (fmax_uncap_timestamp) {
-		/*
-		 * Enter to check for capping again only if we have already uncapped
-		 * Apply fmax capping if we are continuously running at lower
-		 * load for more than FMAX_CAP_HYSTERESIS.
-		 */
-		if (window_start > fmax_uncap_timestamp + FMAX_CAP_HYSTERESIS) {
-			for (int i = 0; i < num_sched_clusters; i++)
-				fmax_cap[SMART_FMAX_CAP][i] = sysctl_fmax_cap[i];
-
-			fmax_uncap_timestamp = 0;
 		}
+	} else if (fmax_uncap_timestamp &&
+			(window_start > fmax_uncap_timestamp + FMAX_CAP_HYSTERESIS)) {
+		for (int i = 0; i < num_sched_clusters; i++)
+			fmax_cap[SMART_FMAX_CAP][i] = sysctl_fmax_cap[i];
+		fmax_uncap_timestamp = 0;
 	}
 
 	update_fmax_cap_capacities();
@@ -4643,8 +4737,8 @@ void fmax_uncap_checkpoint(int nr_big, u64 window_start, u32 wakeup_ctr_sum)
 void update_freq_relation(struct walt_sched_cluster *cluster)
 {
 	int cluster_id = cluster->id;
-	int tgt_cpu, i, cpu;
-	unsigned int tgt_freq = 0;
+	int tgt_cpu, i;
+	unsigned int tgt_freq;
 	struct walt_sched_cluster *tgt_cluster;
 	unsigned int prev_cap = fmax_cap[FREQ_REL_CAP][cluster_id];
 	bool cluster_active = false;
@@ -4656,20 +4750,8 @@ void update_freq_relation(struct walt_sched_cluster *cluster)
 		if (tgt_cpu < 0)
 			break;
 		tgt_cluster = cpu_cluster(tgt_cpu);
-		/* frequency is valid only if we are running something */
-		for_each_cpu(cpu, &tgt_cluster->cpus) {
-			struct rq *rq = cpu_rq(cpu);
-
-			if (rq->nr_running) {
-				cluster_active = true;
-				break;
-			}
-		}
-
-		if (cluster_active)
-			tgt_freq = (arch_scale_freq_capacity(tgt_cpu) *
-				    (unsigned long)tgt_cluster->max_possible_freq) >>
-					SCHED_CAPACITY_SHIFT;
+		tgt_freq = (arch_scale_freq_capacity(tgt_cpu) *
+			(unsigned long)tgt_cluster->max_possible_freq) >> SCHED_CAPACITY_SHIFT;
 
 		if (tgt_freq < relation_data[cluster_id][i].tgt_freq) {
 			fmax_cap[FREQ_REL_CAP][cluster_id] = relation_data[cluster_id][i].src_freq;
@@ -4899,6 +4981,9 @@ static void walt_cpu_frequency_limits(void *unused, struct cpufreq_policy *polic
 	if (unlikely(walt_disabled))
 		return;
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_OCH)
+	cpufreq_health_get_state(policy);
+#endif
 	cpu_cluster(policy->cpu)->max_freq = policy->max;
 	for_each_cpu(cpu, policy->related_cpus)
 		update_cpu_capacity_helper(cpu);
@@ -4939,6 +5024,9 @@ static void android_rvh_set_task_cpu(void *unused, struct task_struct *p, unsign
 
 static void android_rvh_new_task_stats(void *unused, struct task_struct *p)
 {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+	update_wake_up(p);
+#endif
 	if (unlikely(walt_disabled))
 		return;
 	mark_task_starting(p);
@@ -4991,6 +5079,9 @@ static void android_rvh_enqueue_task(void *unused, struct rq *rq,
 	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
 	struct walt_rq *wrq = &per_cpu(walt_rq, cpu_of(rq));
 	bool double_enqueue = false;
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	bool in_iowait = sysctl_oplus_iowait_boost_enabled && (!!p->in_iowait);
+#endif
 
 	if (unlikely(walt_disabled))
 		return;
@@ -5037,8 +5128,17 @@ static void android_rvh_enqueue_task(void *unused, struct rq *rq,
 	if (!double_enqueue)
 		walt_inc_cumulative_runnable_avg(rq, p);
 
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	if ((flags & ENQUEUE_WAKEUP) && do_pl_notif(rq, in_iowait)) {
+		if (in_iowait)
+			waltgov_run_callback(rq, WALT_CPUFREQ_PL|WALT_CPUFREQ_IOWAIT);
+		else
+			waltgov_run_callback(rq, WALT_CPUFREQ_PL);
+	}
+#else
 	if ((flags & ENQUEUE_WAKEUP) && do_pl_notif(rq))
 		waltgov_run_callback(rq, WALT_CPUFREQ_PL);
+#endif
 
 	trace_sched_enq_deq_task(p, 1, cpumask_bits(p->cpus_ptr)[0], is_mvp(wts));
 }
@@ -5138,6 +5238,10 @@ static void android_rvh_try_to_wake_up(void *unused, struct task_struct *p)
 	u64 wallclock;
 	unsigned int old_load;
 	struct walt_related_thread_group *grp = NULL;
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+	update_wake_up(p);
+#endif
 
 	if (unlikely(walt_disabled))
 		return;
