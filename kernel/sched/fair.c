@@ -4959,6 +4959,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 	 * EEVDF: vd_i = ve_i + r_i/w_i
 	 */
 	se->deadline = se->vruntime + vslice;
+	trace_android_rvh_place_entity(cfs_rq, se, flags, &vruntime);
 }
 
 static void check_enqueue_throttle(struct cfs_rq *cfs_rq);
@@ -7980,8 +7981,10 @@ static void check_preempt_wakeup_fair(struct rq *rq, struct task_struct *p, int 
 	struct task_struct *curr = rq->curr;
 	struct sched_entity *se = &curr->se, *pse = &p->se;
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
+	int next_buddy_marked = 0;
 	int cse_is_idle, pse_is_idle;
 	bool ignore = false;
+	bool preempt = false;
 
 	if (unlikely(se == pse))
 		return;
@@ -8000,6 +8003,7 @@ static void check_preempt_wakeup_fair(struct rq *rq, struct task_struct *p, int 
 
 	if (sched_feat(NEXT_BUDDY) && !(wake_flags & WF_FORK)) {
 		set_next_buddy(pse);
+		next_buddy_marked = 1;
 	}
 
 	/*
@@ -8052,6 +8056,13 @@ static void check_preempt_wakeup_fair(struct rq *rq, struct task_struct *p, int 
 		/* negate RUN_TO_PARITY */
 		se->vlag = se->deadline - 1;
 	}
+
+		trace_android_rvh_check_preempt_wakeup(rq, p, &preempt, &ignore,
+    				wake_flags, se, pse, next_buddy_marked);
+    	if (preempt)
+    		goto preempt;
+    	if (ignore)
+    		return;
 
 	if (pick_eevdf(cfs_rq) == pse)
 		goto preempt;
