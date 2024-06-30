@@ -610,6 +610,7 @@ static unsigned long uag_gov_get_util(struct uag_gov_cpu *sg_cpu)
 	if (_stune_util)
 		util = (*_stune_util)(sg_cpu->cpu, 0, util);
 #endif
+    util = apply_dvfs_headroom(util+cpu_bw_dl(rq), sg_cpu->cpu);
 	return uclamp_rq_util_with(rq, util, NULL);
 }
 #endif /* CONFIG_ARCH_MEDIATEK */
