@@ -42,6 +42,7 @@ int mi_dsi_panel_parse_esd_gpio_config(struct dsi_panel *panel)
 		rc = -EINVAL;
 	}
 
+#ifdef CONFIG_MACH_XIAOMI_YUDI
 	if( !strcmp(panel->name,"xiaomi m80 42 02 0a video mode dual dsi dphy panel")){
 		mi_cfg->esd_err_irq_gpio_second = of_get_named_gpio_flags(
 			utils->data, "mi,esd-err-irq-gpio-second",
@@ -58,7 +59,8 @@ int mi_dsi_panel_parse_esd_gpio_config(struct dsi_panel *panel)
 			rc = -EINVAL;
 		}
 	}
-	
+#endif
+
 	return rc;
 }
 
@@ -136,15 +138,29 @@ static void mi_dsi_panel_parse_lhbm_config(struct dsi_panel *panel)
 	if (mi_cfg->lhbm_ctrl_63_C5_reg)
 		DISP_INFO("mi,local-hbm-ctrl-63-c5-reg\n");
 
-	if (mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L3_PANEL_PA ||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L12_PANEL_PA ||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L12_PANEL_PB ||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L3S_PANEL_PA ||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L9S_PANEL_PA ||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L9S_PANEL_PB ||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == M11A_PANEL_PA||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == N16_PANEL_PA ||
-			mi_get_panel_id(panel->mi_cfg.mi_panel_id) == N16_PANEL_PB) {
+	if (false
+#ifdef CONFIG_MACH_XIAOMI_CUPID
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L3_PANEL_PA
+#endif
+#ifdef CONFIG_MACH_XIAOMI_DITING
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L12_PANEL_PA
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L12_PANEL_PB
+#endif
+#ifdef CONFIG_MACH_XIAOMI_MAYFLY
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L3S_PANEL_PA
+#endif
+#ifdef CONFIG_MACH_XIAOMI_ZIYI
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L9S_PANEL_PA
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == L9S_PANEL_PB
+#endif
+#ifdef CONFIG_MACH_XIAOMI_MONDRIAN
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == M11A_PANEL_PA
+#endif
+#ifdef CONFIG_MACH_XIAOMI_GARNET
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == N16_PANEL_PA
+	    || mi_get_panel_id(panel->mi_cfg.mi_panel_id) == N16_PANEL_PB
+#endif
+	    ) {
 		lhbm_ptr = qcom_smem_get(QCOM_SMEM_HOST_ANY, SMEM_SW_DISPLAY_LHBM_TABLE, &item_size);
 		if (!IS_ERR(lhbm_ptr) && item_size > 0) {
 			DISP_INFO("lhbm data size %d\n", item_size);
@@ -152,6 +168,7 @@ static void mi_dsi_panel_parse_lhbm_config(struct dsi_panel *panel)
 			for (i = 1; i < item_size; i += 2) {
 				tmp = ((mi_cfg->lhbm_rgb_param[i-1]) << 8) | mi_cfg->lhbm_rgb_param[i];
 				DISP_INFO("index %d = 0x%04X\n", i, tmp);
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 				if (tmp == 0x0000 && mi_get_panel_id(panel->mi_cfg.mi_panel_id) != N16_PANEL_PA) {
 					DISP_INFO("uefi read lhbm data failed, need kernel read!\n");
 					mi_cfg->uefi_read_lhbm_success = false;
@@ -159,6 +176,9 @@ static void mi_dsi_panel_parse_lhbm_config(struct dsi_panel *panel)
 				} else {
 					mi_cfg->uefi_read_lhbm_success = true;
 				}
+#else
+				mi_cfg->uefi_read_lhbm_success = true;
+#endif
 			}
 		}
 	}
@@ -167,6 +187,7 @@ static void mi_dsi_panel_parse_lhbm_config(struct dsi_panel *panel)
 
 static void mi_dsi_panel_parse_lockdown_config(struct dsi_panel *panel)
 {
+#ifdef CONFIG_MACH_XIAOMI_YUDI
 	size_t item_size;
 	void *lockdown_ptr = NULL;
 	struct mi_dsi_panel_cfg *mi_cfg = &panel->mi_cfg;
@@ -185,10 +206,12 @@ static void mi_dsi_panel_parse_lockdown_config(struct dsi_panel *panel)
 			DISP_ERROR("M80 lockdown data mi_cfg->lockdown_cfg.lockdown_param[%d] = 0x%0x\n",i, mi_cfg->lockdown_cfg.lockdown_param[i]);
 		}
 	}
+#endif
 }
 
 static void mi_dsi_panel_parse_gray_scale_config(struct dsi_panel *panel)
 {
+#ifdef CONFIG_MACH_XIAOMI_DITING
 	int i  = 0, tmp = 0;
 	size_t item_size;
 	void *gray_scale_ptr = NULL;
@@ -207,6 +230,7 @@ static void mi_dsi_panel_parse_gray_scale_config(struct dsi_panel *panel)
 			mi_cfg->uefi_read_gray_scale_success = true;
 		}
 	}
+#endif
 }
 
 static void mi_dsi_panel_parse_flat_config(struct dsi_panel *panel)

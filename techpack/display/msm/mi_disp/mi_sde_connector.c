@@ -219,7 +219,9 @@ static int mi_sde_connector_update_aod_status(struct drm_connector *connector,
 	struct sde_connector *c_conn;
 	struct sde_encoder_virt *sde_enc;
 	struct dsi_display *display = NULL;
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 	static bool aod_status_restore = false;
+#endif
 
 	if (!connector) {
 		DISP_ERROR("invalid connector ptr\n");
@@ -233,6 +235,7 @@ static int mi_sde_connector_update_aod_status(struct drm_connector *connector,
 	if (connector->connector_type == DRM_MODE_CONNECTOR_DSI) {
 		display = (struct dsi_display *)c_conn->display;
 		if (display) {
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 			if (mi_get_panel_id(display->panel->mi_cfg.mi_panel_id) == N16_PANEL_PB ||
 				mi_get_panel_id(display->panel->mi_cfg.mi_panel_id) == N16_PANEL_PA) {
 				if (aod_status_restore != is_aod_exit && is_aod_exit && (c_conn->lp_mode == SDE_MODE_DPMS_LP1 || c_conn->lp_mode == SDE_MODE_DPMS_LP2)) {
@@ -246,7 +249,7 @@ static int mi_sde_connector_update_aod_status(struct drm_connector *connector,
 					return 0;
 				}
 			}
-
+#endif
 			if (is_aod_exit) {
 				if (c_conn->lp_mode == SDE_MODE_DPMS_ON)
 					display->panel->mi_cfg.bl_enable = true;
@@ -271,6 +274,8 @@ static int mi_sde_connector_update_aod_status(struct drm_connector *connector,
 				}
 				if (c_conn->lp_mode == SDE_MODE_DPMS_LP1
 						|| c_conn->lp_mode == SDE_MODE_DPMS_LP2) {
+					DISP_INFO("DSI_CMD_SET_NOLP when AOD disappear\n");
+					display->panel->mi_cfg.unknown_flag = true;
 					dsi_panel_set_nolp(display->panel);
 				}
 			}
@@ -378,10 +383,12 @@ int mi_sde_connector_update_layer_state(struct drm_connector *connector,
 		if (connector->connector_type == DRM_MODE_CONNECTOR_DSI) {
 			display = (struct dsi_display *)c_conn->display;
 			if (display && mi_disp_lhbm_fod_enabled(display->panel)) {
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 				if (mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PB &&
 					cur_flags.fod_anim_flag == true) {
 					display->panel->mi_cfg.aod_to_normal_pending = true;
 				} else {
+#endif
 					display->panel->mi_cfg.aod_to_normal_pending = false;
 					ret = mi_disp_lhbm_aod_to_normal_optimize(display, cur_flags.fod_anim_flag);
 					if (ret == -EAGAIN) {
@@ -389,7 +396,9 @@ int mi_sde_connector_update_layer_state(struct drm_connector *connector,
 						 * And trigger once in next frame*/
 						cur_flags.fod_anim_flag = false;
 					}
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 				}
+#endif
 			}
 		}
 	}

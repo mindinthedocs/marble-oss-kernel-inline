@@ -372,6 +372,7 @@ int mi_disp_lhbm_aod_to_normal_optimize(struct dsi_display *display,
 	if (!display->panel->mi_cfg.need_fod_animal_in_normal)
 		return 0;
 
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 	/* Panel normal On, does not need to do aod to normal optimize */
 	if (mi_get_panel_id(display->panel->mi_cfg.mi_panel_id) == N16_PANEL_PB ||
 		mi_get_panel_id(display->panel->mi_cfg.mi_panel_id) == N16_PANEL_PA) {
@@ -379,6 +380,7 @@ int mi_disp_lhbm_aod_to_normal_optimize(struct dsi_display *display,
 			return 0;
 		}
 	}
+#endif
 
 	memset(&ctl, 0, sizeof(struct disp_feature_ctl));
 	ctl.feature_id = DISP_FEATURE_AOD_TO_NORMAL;
@@ -428,6 +430,7 @@ static int mi_disp_lhbm_fod_thread_fn(void *arg)
 		DISP_INFO("lhbm_value(%d)\n", entry->lhbm_value);
 		memcpy(&lhbm_setting_event, entry, sizeof(lhbm_setting_event));
 
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 		if ((mi_get_panel_id_by_dsi_panel(lhbm_fod->display->panel) == N16_PANEL_PA
 			|| mi_get_panel_id_by_dsi_panel(lhbm_fod->display->panel) == N16_PANEL_PB)
 			&& is_aod_and_panel_initialized(lhbm_fod->display->panel)) {
@@ -443,6 +446,7 @@ static int mi_disp_lhbm_fod_thread_fn(void *arg)
 				}
 			}
 		}
+#endif
 
 		list_for_each_entry_safe(entry, temp, &lhbm_fod->event_list, link) {
 			DISP_DEBUG("in list, lhbm_value(%d)\n", entry->lhbm_value);

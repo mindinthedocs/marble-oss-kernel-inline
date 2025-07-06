@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
+ * Copyright (c) 2021-2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2019, 2021, The Linux Foundation. All rights reserved.
  */
 
@@ -176,15 +177,6 @@ struct sde_hw_intr_ops {
 			int irq_idx);
 
 	/**
-	 * clear_intr_status_nolock() - clears the HW interrupts without lock
-	 * @intr:	HW interrupt handle
-	 * @irq_idx:	Lookup irq index return from irq_idx_lookup
-	 */
-	void (*clear_intr_status_nolock)(
-			struct sde_hw_intr *intr,
-			int irq_idx);
-
-	/**
 	 * get_interrupt_status - Gets HW interrupt status, and clear if set,
 	 *                        based on given lookup IRQ index.
 	 * @intr:	HW interrupt handle
@@ -224,6 +216,7 @@ struct sde_hw_intr_ops {
  * @hw:               virtual address mapping
  * @ops:              function pointer mapping for IRQ handling
  * @cache_irq_mask:   array of IRQ enable masks reg storage created during init
+ * @save_irq_status:  array of IRQ status reg storage created during init
  * @irq_lock:         spinlock for accessing IRQ resources
  * @sde_irq_size:   total number of elements of the sde_irq_tbl
  * @sde_irq_tbl:	table with the registesrs offsets of the sde interrupts
@@ -235,6 +228,7 @@ struct sde_hw_intr {
 	struct sde_hw_blk_reg_map hw;
 	struct sde_hw_intr_ops ops;
 	u32 *cache_irq_mask;
+	u32 *save_irq_status;
 	u32 sde_irq_size;
 	struct sde_intr_reg *sde_irq_tbl;
 	u32 sde_irq_map_size;

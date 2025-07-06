@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -673,6 +673,7 @@ void sde_encoder_destroy(struct drm_encoder *drm_enc)
 
 	kfree(sde_enc->input_handler);
 	sde_enc->input_handler = NULL;
+	sde_enc->input_handler_registered = false;
 
 	kfree(sde_enc);
 }
@@ -846,7 +847,8 @@ bool sde_encoder_is_cwb_disabling(struct drm_encoder *drm_enc,
 	if (sde_enc->disp_info.intf_type != DRM_MODE_CONNECTOR_VIRTUAL)
 		return false;
 
-	for (i = 0; i < sde_enc->num_phys_encs; i++) {
+	for (i = 0; i < sde_enc->num_phys_encs &&
+		i < MAX_PHYS_ENCODERS_PER_VIRTUAL; i++) {
 		struct sde_encoder_phys *phys = sde_enc->phys_encs[i];
 
 		if (sde_encoder_phys_is_cwb_disabling(phys, crtc))
@@ -1624,10 +1626,17 @@ static int _sde_encoder_update_rsc_client(
 void sde_encoder_irq_control(struct drm_encoder *drm_enc, bool enable)
 {
 	struct sde_encoder_virt *sde_enc;
+	struct sde_kms *sde_kms = NULL;
 	int i;
 
 	if (!drm_enc) {
 		SDE_ERROR("invalid encoder\n");
+		return;
+	}
+
+	sde_kms = sde_encoder_get_kms(drm_enc);
+	if (!sde_kms) {
+		SDE_ERROR("invalid kms\n");
 		return;
 	}
 
@@ -1640,7 +1649,7 @@ void sde_encoder_irq_control(struct drm_encoder *drm_enc, bool enable)
 		if (phys && phys->ops.irq_control)
 			phys->ops.irq_control(phys, enable);
 	}
-	sde_kms_cpu_vote_for_irq(sde_encoder_get_kms(drm_enc), enable);
+	sde_kms_cpu_vote_for_irq(sde_kms, enable);
 
 }
 
@@ -2800,6 +2809,7 @@ static int _sde_encoder_input_handler(
 	input_handler->id_table = sde_input_ids;
 
 	sde_enc->input_handler = input_handler;
+	sde_enc->input_handler_registered = false;
 
 	return rc;
 }
@@ -3072,7 +3082,19 @@ static void sde_encoder_virt_enable(struct drm_encoder *drm_enc)
 		return;
 	}
 
-	_sde_encoder_input_handler_register(drm_enc);
+	/* register input handler if not already registered */
+	if (sde_enc->input_handler && !sde_enc->input_handler_registered &&
+			!msm_is_mode_seamless_dms(msm_mode) &&
+		sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_CMD_MODE) &&
+			!msm_is_mode_seamless_dyn_clk(msm_mode)) {
+		_sde_encoder_input_handler_register(drm_enc);
+		if (!sde_enc->input_handler || !sde_enc->input_handler->private)
+			SDE_ERROR(
+			"input handler registration failed, rc = %d\n", ret);
+		else
+			sde_enc->input_handler_registered = true;
+	}
+
 	c_state = to_sde_connector_state(sde_enc->cur_master->connector->state);
 	if (!c_state) {
 		SDE_ERROR("invalid connector state\n");
@@ -3216,7 +3238,11 @@ static void sde_encoder_virt_disable(struct drm_encoder *drm_enc)
 		sde_encoder_wait_for_event(drm_enc, MSM_ENC_TX_COMPLETE);
 	}
 
-	_sde_encoder_input_handler_unregister(drm_enc);
+	if (sde_enc->input_handler && sde_enc->input_handler_registered &&
+		sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_CMD_MODE)) {
+		_sde_encoder_input_handler_unregister(drm_enc);
+		sde_enc->input_handler_registered = false;
+	}
 
 	flush_delayed_work(&sde_conn->status_work);
 	/*
@@ -4704,6 +4730,7 @@ int sde_encoder_vid_wait_for_active(
 		mode = phys->cached_mode;
 		min_ln_cnt = (mode.vtotal - mode.vsync_start) +
 			(mode.vsync_end - mode.vsync_start);
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 		if (display && display->panel &&
 			(mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PA
 			||mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PB)) {
@@ -4713,6 +4740,9 @@ int sde_encoder_vid_wait_for_active(
 		} else {
 			active_mark_region = mode.vdisplay + min_ln_cnt - mode.vdisplay / 4;
 		}
+#else
+		active_mark_region = mode.vdisplay + min_ln_cnt - mode.vdisplay / 4;
+#endif
 		while (retry) {
 			ln_cnt = phys->ops.get_line_count(phys);
 			if ((ln_cnt > min_ln_cnt) && (ln_cnt < active_mark_region))
@@ -4733,7 +4763,6 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 	struct dsi_display *dsi_display = NULL;
 	struct dsi_display_mode adj_mode;
 	struct drm_bridge *bridge;
-	unsigned int rc = 0;
 
 	if (!drm_enc) {
 		SDE_ERROR("invalid encoder\n");
@@ -4766,6 +4795,7 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 		SDE_EVT32(DRMID(drm_enc), i, SDE_EVTLOG_FUNC_CASE1);
 	}
 
+#ifdef CONFIG_MACH_XIAOMI_MARBLE
 	if (dsi_display && dsi_display->panel
 		&& sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DSI
 		&& adj_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR) {
@@ -4778,7 +4808,9 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 			mutex_unlock(&dsi_display->panel->panel_lock);
 		}
 	}
+#endif
 
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 	if (dsi_display && dsi_display->panel && sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DSI
 		&& (mi_get_panel_id_by_dsi_panel(dsi_display->panel) == N16_PANEL_PA
 		||mi_get_panel_id_by_dsi_panel(dsi_display->panel) == N16_PANEL_PB)
@@ -4786,8 +4818,7 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 		mutex_lock(&dsi_display->panel->panel_lock);
 		if (mi_get_panel_id_by_dsi_panel(dsi_display->panel) == N16_PANEL_PB &&
 			dsi_display->panel->mi_cfg.aod_to_normal_pending) {
-			rc = mi_dsi_panel_aod_to_normal_optimize_locked(dsi_display->panel, true);
-			if (rc != -EAGAIN)
+			if (mi_dsi_panel_aod_to_normal_optimize_locked(dsi_display->panel, true) != -EAGAIN)
 				dsi_display->panel->mi_cfg.aod_to_normal_pending = false;
 		}
 		sde_encoder_vid_wait_for_active(drm_enc);
@@ -4802,7 +4833,9 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 			mi_disp_lhbm_fod_allow_tx_lhbm(dsi_display, true);
 		}
 	}
+#endif
 
+#ifdef CONFIG_MACH_XIAOMI_YUDI
 	if (dsi_display && dsi_display->panel && (mi_get_panel_id(dsi_display->panel->mi_cfg.mi_panel_id) == M80_PANEL_PA) &&
 	    (adj_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR)) {
 		mutex_lock(&dsi_display->panel->panel_lock);
@@ -4812,14 +4845,14 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 	if (dsi_display && dsi_display->panel && (mi_get_panel_id(dsi_display->panel->mi_cfg.mi_panel_id) == M80_PANEL_PA) &&
 	    (adj_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR)) {
 		if (dsi_display->panel->mi_cfg.last_fps == 60 && adj_mode.timing.refresh_rate != 120) {
-		    rc = dsi_panel_tx_cmd_set(dsi_display->panel, DSI_CMD_SET_DISP_PEN_CLEAR);
-			if (rc) {
+			if (dsi_panel_tx_cmd_set(dsi_display->panel, DSI_CMD_SET_DISP_PEN_CLEAR)) {
 				pr_err("Failed to send DSI_CMD_SET_DISP_PEN_CLEAR command\n");
 			}
 			sde_encoder_wait_for_event(drm_enc,MSM_ENC_VBLANK);
 			sde_encoder_vid_wait_for_active(drm_enc);
 		}
 	}
+#endif
 
 	/* All phys encs are ready to go, trigger the kickoff */
 	_sde_encoder_kickoff_phys(sde_enc, config_changed);
@@ -4836,25 +4869,28 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool config_changed)
 		_sde_encoder_update_rsc_client(drm_enc, true);
 
 
-
+#ifdef CONFIG_MACH_XIAOMI_YUDI
 	if (dsi_display && dsi_display->panel && (mi_get_panel_id(dsi_display->panel->mi_cfg.mi_panel_id) == M80_PANEL_PA) &&
 	    (adj_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR)) {
 		mi_dsi_panel_match_fps_pen_setting(dsi_display->panel, &adj_mode);
 		mutex_unlock(&dsi_display->panel->panel_lock);
 	}
+#endif
 
+#ifdef CONFIG_MACH_XIAOMI_MARBLE
 	if (dsi_display && dsi_display->panel
 		&& sde_enc->disp_info.intf_type == DRM_MODE_CONNECTOR_DSI
 		&& mi_get_panel_id_by_dsi_panel(dsi_display->panel) == M16T_PANEL_PA
 		&& adj_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR) {
 		dsi_panel_gamma_switch(dsi_display->panel);
 	}
+#endif
 
 	SDE_ATRACE_END("encoder_kickoff");
 }
 
 void sde_encoder_helper_get_pp_line_count(struct drm_encoder *drm_enc,
-			struct sde_hw_pp_vsync_info *info, int rw)
+			struct sde_hw_pp_vsync_info *info)
 {
 	struct sde_encoder_virt *sde_enc;
 	struct sde_encoder_phys *phys;
@@ -4870,7 +4906,7 @@ void sde_encoder_helper_get_pp_line_count(struct drm_encoder *drm_enc,
 		if (phys && phys->hw_intf && phys->hw_pp
 				&& phys->hw_intf->ops.get_vsync_info) {
 			ret = phys->hw_intf->ops.get_vsync_info(
-						phys->hw_intf, &info[i], rw);
+						phys->hw_intf, &info[i]);
 			if (!ret) {
 				info[i].pp_idx = phys->hw_pp->idx - PINGPONG_0;
 				info[i].intf_idx = phys->hw_intf->idx - INTF_0;

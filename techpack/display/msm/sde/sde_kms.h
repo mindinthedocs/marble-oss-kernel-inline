@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
@@ -49,19 +49,37 @@
  * SDE_DEBUG - macro for kms/plane/crtc/encoder/connector logs
  * @fmt: Pointer to format string
  */
-#define SDE_DEBUG(fmt, ...) pr_debug(fmt, ##__VA_ARGS__)
+#define SDE_DEBUG(fmt, ...)                                                \
+	do {                                                               \
+		if (drm_debug_enabled(DRM_UT_KMS))                      \
+			DRM_DEBUG(fmt, ##__VA_ARGS__); \
+		else                                                       \
+			pr_debug(fmt, ##__VA_ARGS__);                      \
+	} while (0)
 
 /**
  * SDE_INFO - macro for kms/plane/crtc/encoder/connector logs
  * @fmt: Pointer to format string
  */
-#define SDE_INFO(fmt, ...) pr_debug(fmt, ##__VA_ARGS__)
+#define SDE_INFO(fmt, ...)                                                \
+	do {                                                               \
+		if (drm_debug_enabled(DRM_UT_KMS))                      \
+			DRM_INFO(fmt, ##__VA_ARGS__); \
+		else                                                       \
+			pr_info(fmt, ##__VA_ARGS__);                      \
+	} while (0)
 
 /**
  * SDE_DEBUG_DRIVER - macro for hardware driver logging
  * @fmt: Pointer to format string
  */
-#define SDE_DEBUG_DRIVER(fmt, ...) pr_debug(fmt, ##__VA_ARGS__)
+#define SDE_DEBUG_DRIVER(fmt, ...)                                         \
+	do {                                                               \
+		if (drm_debug_enabled(DRM_UT_DRIVER))                   \
+			DRM_ERROR(fmt, ##__VA_ARGS__); \
+		else                                                       \
+			pr_debug(fmt, ##__VA_ARGS__);                      \
+	} while (0)
 
 #define SDE_ERROR(fmt, ...) pr_err("[sde error]" fmt, ##__VA_ARGS__)
 
@@ -292,6 +310,7 @@ struct sde_kms {
 	bool first_kickoff;
 	bool qdss_enabled;
 	bool pm_suspend_clk_dump;
+	bool freeze_late;
 
 	cpumask_t irq_cpu_mask;
 	atomic_t irq_vote_count;

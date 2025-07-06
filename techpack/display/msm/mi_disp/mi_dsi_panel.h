@@ -164,6 +164,7 @@ struct mi_dsi_panel_cfg {
 	u32 normal_max_brightness_clone;
 	u32 thermal_max_brightness_clone;
 	bool thermal_dimming_enabled;
+	bool unknown_flag;
 
 	/* software build id */
 	bool panel_build_id_read_needed;
@@ -171,6 +172,7 @@ struct mi_dsi_panel_cfg {
 
 	/* AOD control */
 	u32 doze_brightness;
+	u32 last_doze_brightness;
 	struct mutex doze_lock;
 	struct wakeup_source *disp_wakelock;
 	int doze_hbm_dbv_level;
@@ -257,11 +259,6 @@ struct mi_dsi_panel_cfg {
 	bool aod_to_normal_pending;
 	/* video panel fps cmds*/
 	bool video_fps_cmdsets_enanle;
-
-	/* DDIC auto update gamma */
-	bool nedd_auto_update_gamma; // 0x171
-	bool first_timing_switch; // 0xb89
-	ktime_t last_mode_switch_time; // 0x172
 };
 
 struct panel_batch_info
@@ -411,11 +408,5 @@ int dsi_panel_parse_cell_id_read_config(struct dsi_panel *panel);
 int mi_dsi_panel_set_flat_mode(struct dsi_panel *panel, bool enable);
 int mi_dsi_panel_set_flat_mode_locked(struct dsi_panel *panel, bool enable);
 int mi_dsi_panel_aod_to_normal_optimize_locked(struct dsi_panel *panel, bool enable);
-
-int mi_dsi_panel_set_gamma_update_reg(struct dsi_panel *panel);
-
-int mi_dsi_panel_set_gamma_update_state(struct dsi_panel *panel);
-
-int mi_dsi_first_timing_switch(struct dsi_panel *panel);
 
 #endif /* _MI_DSI_PANEL_H_ */

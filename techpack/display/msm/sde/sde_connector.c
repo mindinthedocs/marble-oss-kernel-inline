@@ -1216,11 +1216,13 @@ void sde_connector_helper_bridge_disable(struct drm_connector *connector)
 			SDE_EVT32(connector->base.id, SDE_EVTLOG_ERROR);
 		}
 	}
+#ifdef CONFIG_MACH_XIAOMI_GARNET
 	if(display && display->panel && c_conn->connector_type == DRM_MODE_CONNECTOR_DSI
 		&& (mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PA
 		|| mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PB)){
 		memset(&c_conn->mi_layer_state.layer_flags, 0, sizeof(c_conn->mi_layer_state.layer_flags));
 	}
+#endif
 	/* Disable ESD thread */
 	sde_connector_schedule_status_work(connector, false);
 

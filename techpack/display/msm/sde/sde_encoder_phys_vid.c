@@ -108,9 +108,15 @@ static void drm_mode_to_intf_timing_params(
 	timing->vsync_polarity = (mode->flags & DRM_MODE_FLAG_NVSYNC) ? 1 : 0;
 	timing->border_clr = 0;
 	display = mi_get_primary_dsi_display();
-	if (display && (mi_get_panel_id_by_dsi_panel(display->panel) == M16T_PANEL_PA ||
-		mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PA ||
-		mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PB)) {
+	if (display && (false
+#ifdef CONFIG_MACH_XIAOMI_MARBLE
+	    || mi_get_panel_id_by_dsi_panel(display->panel) == M16T_PANEL_PA 
+#endif
+#ifdef CONFIG_MACH_XIAOMI_GARNET
+	    || mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PA
+	    || mi_get_panel_id_by_dsi_panel(display->panel) == N16_PANEL_PB
+#endif
+	    )) {
 		timing->underflow_clr = 0;
 	} else{
 		timing->underflow_clr = 0xff;
