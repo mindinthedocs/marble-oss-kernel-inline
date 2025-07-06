@@ -2178,6 +2178,55 @@ static ssize_t ship_mode_en_show(struct class *c, struct class_attribute *attr,
 }
 static CLASS_ATTR_RW(ship_mode_en);
 
+static ssize_t charging_enabled_store(struct class *c,
+				      struct class_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc;
+	bool val;
+
+	if (kstrtobool(buf, &val))
+		return -EINVAL;
+
+	if (val) {
+		/*
+		 * Enable charging, i.e. set the restricted current back to
+		 * the thermal limit and unset the restriction boolean flag.
+		 */
+		rc = __battery_psy_set_charge_current(bcdev,
+				bcdev->thermal_fcc_ua);
+		if (rc < 0)
+			return rc;
+		bcdev->restrict_fcc_ua = bcdev->thermal_fcc_ua;
+		bcdev->restrict_chg_en = 0;
+	} else {
+		/*
+		 * Disable charging, i.e. set the restricted current to zero
+		 * and set the restriction boolean flag.
+		 */
+		rc = __battery_psy_set_charge_current(bcdev, 0 /* 0 uA */);
+		if (rc < 0)
+			return rc;
+		bcdev->restrict_fcc_ua = 0;
+		bcdev->restrict_chg_en = 1;
+	}
+
+	return count;
+}
+
+static ssize_t charging_enabled_show(struct class *c,
+				     struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	bool val = !bcdev->restrict_chg_en && bcdev->restrict_fcc_ua;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", val);
+}
+static CLASS_ATTR_RW(charging_enabled);
+
 static struct attribute *battery_class_attrs[] = {
 	&class_attr_soh.attr,
 	&class_attr_resistance.attr,
@@ -2196,6 +2245,7 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_restrict_cur.attr,
 	&class_attr_usb_real_type.attr,
 	&class_attr_usb_typec_compliant.attr,
+	&class_attr_charging_enabled.attr,
 	NULL,
 };
 
@@ -2498,6 +2548,12 @@ static void screen_state_for_charge_callback(enum panel_event_notifier_tag notif
 			default:
 				return;
 		}
+#ifndef CONFIG_MI_CHARGER_M81
+		if (write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_XM],
+				      XM_PROP_BLANK_STATUS,
+				      blank_state) < 0)
+			pr_err("%s blank state notify fail\n", __func__);
+#endif /* !CONFIG_MI_CHARGER_M81 */
 		printk(KERN_ERR "%s, primary blank_state = %d\n", __func__, blank_state);
 		if (!bcdev->support_soc_update || bcdev->support_screen_update)
 			schedule_work(&bcdev->notify_blankstate_work);
