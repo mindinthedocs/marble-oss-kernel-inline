@@ -30,7 +30,6 @@
 #include <linux/freezer.h>
 #include <linux/irq.h>
 #include <linux/list_sort.h>
-#include <linux/sched/cputime.h>
 #include "../sched/sched.h"
 #include "internals.h"
 
@@ -99,11 +98,11 @@ void sbalance_desc_del(struct irq_desc *desc)
 	spin_unlock(&bal_irq_lock);
 }
 
-static int bal_irq_move_node_cmp(void *priv, const struct list_head *lhs_p,
-				 const struct list_head *rhs_p)
+static int bal_irq_move_node_cmp(void *priv, struct list_head *lhs_p,
+				 struct list_head *rhs_p)
 {
-	const struct bal_irq *lhs = list_entry(lhs_p, typeof(*lhs), move_node);
-	const struct bal_irq *rhs = list_entry(rhs_p, typeof(*rhs), move_node);
+	struct bal_irq *lhs = list_entry(lhs_p, typeof(*lhs), move_node);
+	struct bal_irq *rhs = list_entry(rhs_p, typeof(*rhs), move_node);
 
 	return rhs->delta_nr - lhs->delta_nr;
 }
@@ -369,14 +368,16 @@ static void sbalance_wait(long poll_jiffies)
 	 * Open code freezable_schedule_timeout_interruptible() in order to
 	 * make the timer deferrable, so that it doesn't kick CPUs out of idle.
 	 */
-	__set_current_state(TASK_IDLE | TASK_FREEZABLE);
+	freezer_do_not_count();
+	__set_current_state(TASK_IDLE);
 	timer.task = current;
 	timer_setup_on_stack(&timer.timer, process_timeout, TIMER_DEFERRABLE);
 	timer.timer.expires = jiffies + poll_jiffies;
 	add_timer(&timer.timer);
 	schedule();
-	del_timer_sync(&timer.timer);
+	del_singleshot_timer_sync(&timer.timer);
 	destroy_timer_on_stack(&timer.timer);
+	freezer_count();
 }
 
 static int __noreturn sbalance_thread(void *data)

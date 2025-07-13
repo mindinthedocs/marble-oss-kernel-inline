@@ -36,7 +36,7 @@ static int __init irq_affinity_setup(char *str)
 	cpumask_set_cpu(smp_processor_id(), irq_default_affinity);
 	return 1;
 }
-__setup("irqaffinity=", irq_affinity_setup);
+//__setup("irqaffinity=", irq_affinity_setup);
 
 static void __init init_irq_default_affinity(void)
 {
