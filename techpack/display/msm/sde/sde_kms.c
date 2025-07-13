@@ -76,6 +76,8 @@
 
 EXPORT_TRACEPOINT_SYMBOL(tracing_mark_write);
 
+extern void register_qcom_lpm_display_notifier(struct drm_panel *panel);
+
 static const char * const iommu_ports[] = {
 		"mdp_0",
 };
@@ -1022,6 +1024,7 @@ static void _sde_kms_drm_check_dpms(struct drm_atomic_state *old_state,
 			notification.notif_data.early_trigger = is_pre_commit;
 			start_ktime = ktime_get();
 			SDE_ATRACE_BEGIN("panel_event_notification_trigger");
+			register_qcom_lpm_display_notifier(c_conn->panel);
 			panel_event_notification_trigger(panel_type,
 					&notification);
 			SDE_ATRACE_END("panel_event_notification_trigger");

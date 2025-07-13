@@ -29,6 +29,8 @@
 #include "qcom-lpm.h"
 #define CREATE_TRACE_POINTS
 #include "trace-qcom-lpm.h"
+#include <linux/soc/qcom/panel_event_notifier.h>
+#include <drm/drm_panel.h>
 
 #define LPM_PRED_RESET				0
 #define LPM_PRED_RESIDENCY_PATTERN		1
@@ -50,6 +52,7 @@ bool sleep_disabled = true;
 static bool suspend_in_progress;
 static bool traces_registered;
 static struct cluster_governor *cluster_gov_ops;
+bool notifier_registered;
 
 DEFINE_PER_CPU(struct lpm_cpu, lpm_cpu_data);
 
@@ -833,6 +836,49 @@ static struct cpuidle_governor lpm_governor = {
 	.select =	lpm_select,
 	.reflect =	lpm_reflect,
 };
+
+static void sleep_disabler_panel_event_notifier_callback(enum panel_event_notifier_tag tag,
+			struct panel_event_notification *notification, void *data)
+{
+	if (!notification) {
+		pr_err("%s: Invalid panel notification\n", __func__);
+		return;
+	}
+	if (tag != PANEL_EVENT_NOTIFICATION_PRIMARY)
+		return;
+	switch (notification->notif_type) {
+		case DRM_PANEL_EVENT_UNBLANK:
+			sleep_disabled = true;
+			break;
+		case DRM_PANEL_EVENT_BLANK:
+			sleep_disabled = false;
+			break;
+		case DRM_PANEL_EVENT_BLANK_LP:
+			sleep_disabled = false;
+			break;
+		default:
+			pr_debug("%s: ignore panel event: %d\n", __func__, notification->notif_type);
+			break;
+	}
+}
+
+void register_qcom_lpm_display_notifier(struct drm_panel *panel){
+	if (notifier_registered)
+	   return;
+	void *cookie = panel_event_notifier_register(
+			PANEL_EVENT_NOTIFICATION_PRIMARY, PANEL_EVENT_NOTIFIER_CLIENT_SLEEP_DISABLER,
+			panel /* active_panel */, sleep_disabler_panel_event_notifier_callback, NULL);
+    if (IS_ERR(cookie)) {
+        pr_err("%s: LPM notifier registration failed: %ld\n",
+               __func__, PTR_ERR(cookie));
+    } else {
+        pr_info("%s: LPM registered notifier, cookie=%p\n",
+                __func__, cookie);
+		notifier_registered = true;
+    }
+}
+
+EXPORT_SYMBOL(register_qcom_lpm_display_notifier);
 
 static int __init qcom_lpm_governor_init(void)
 {
